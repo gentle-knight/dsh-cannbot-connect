@@ -1,82 +1,76 @@
 # dsh-cannbot-connect
 
-把 **CANNBOT 网关**的模型接入 **DeepSeek Harness (DSH)**，复用 CANNWork 已经为 opencode 建立好的登录态，不另起一套 OAuth。
+把 **CANNBOT 网关**的模型接入 **DeepSeek Harness (DSH)**，复用 **CANNWork**
+已经为 opencode 建立好的登录态，不另起一套 OAuth、不需要额外填任何 key。
+
+> 本仓库**不含任何密钥**。VK 与 JWT 都是运行时从你本机 CANNWork 写下的文件里读取的。
 
 ---
 
-## 1. opencode 是怎么接 CANNBOT 的（逆向结论）
+## 1. 它解决什么问题
 
-opencode 侧由三样东西组成，全部在 `~/.config/opencode/`：
+CANNBOT 网关要求**两个凭据同时具备**（实测，缺一即 401）：
 
-| 组成 | 位置 | 作用 |
+| 请求携带 | 网关响应 |
+|---|---|
+| 只带 VK | `401 {"message":"Access Token required."}` |
+| 只带 JWT | `401 {"message":"Virtual Key is required."}` |
+| **VK + JWT** | `200`，正常返回 |
+
+而这两个凭据平时只由 **CANNWork**（`cannbot-toolkit` 扩展）维护。本插件做的事情就是：
+在 DSH 的请求里自动带上它们，让 CANNWork 里能用的模型在 DSH 里也能直接用。
+
+---
+
+## 2. 前置条件（重要）
+
+**必须先装过 CANNWork 并登录过。** 插件不产生凭据，只消费它们：
+
+| 凭据 | 文件 | 由谁写入/续期 |
 |---|---|---|
-| 插件 | `plugins/cannwork-auth.js` | 注册 provider、注入认证头 |
-| VK | `~/.local/share/opencode/auth.json` → `cannbot.key` | 虚拟密钥，`vk-...` |
-| JWT | `~/.local/share/opencode/session.json` → `accessToken` | 登录令牌，HS512，24h 有效 |
+| JWT | `~/.local/share/opencode/session.json` → `accessToken` | CANNWork，24h 有效，自动刷新 |
+| VK | `~/.local/share/opencode/auth.json` → `cannbot.key` | CANNWork |
 
-插件的三个钩子：
+（若你设了 `XDG_DATA_HOME`，路径以它为前缀。）
 
-1. **`config`** — 注册 `cannbot` provider，`npm: @ai-sdk/openai-compatible`，
-   `baseURL: https://cannbot.hicann.cn/gateway/compatible-mode/v1`；
-   再用 JWT 调 `GET /cannbot/api/models/personal` 动态拉模型列表。
-2. **`auth`** — 声明一个 `api` 类型的 `CANNBOT Virtual Key (VK)` 登录方式。
-3. **`chat.headers`** — **每个请求**注入：
-   - `x-api-vkey: <VK>` 和 `api-key: <VK>`
-   - `Authorization: Bearer <JWT>`
+没登录过的话，插件仍会注册但不能用——请先在 `~/.local/share/opencode/session.json`
+确认存在 `accessToken`，或直接跑 `node e2e.mjs` 看它报什么。
 
-**关键点：网关要求两个凭据同时具备。** 实测：
+其他要求：
 
-```
-只带 VK   → 401 {"message":"Access Token required."}
-只带 JWT  → 401 {"message":"Virtual Key is required."}
-VK + JWT  → 200，正常返回
-```
-
-`session.json` 由 CANNWork（`cannbot-toolkit` VS Code 扩展）写入与自动续期
-（`api/oauth/refresh`），opencode 插件本身只读不写。
+- **DSH 内核 `0.2.1-rc.2`**（本插件针对该版本的 `LlmAdapter` / `PiAiAdapter` 契约编写）
+- **Node.js `^22.19.0 || >=24.0.0`**
+- 能访问 `cannbot.hicann.cn`
 
 ---
 
-## 2. DSH 侧怎么接（本插件做法）
+## 3. 安装
 
-DSH 的模型接入点是 `ctx.llm.registerAdapter(providers, adapter)`，配套基类
-`PiAiAdapter` 来自 `@deepseek-ai/dsh-llm-pi-ai`。本插件：
+```bash
+git clone https://gitcode.com/gentle-knight/dsh-cannbot-connect.git
+cd dsh-cannbot-connect
 
-- **凭据每次操作现读磁盘**（`readJwt()` / `readAccountVk()`），不缓存 —— 所以
-  CANNWork 刷新令牌后，下一个 DSH 请求立刻生效，无需重启。
-- **把凭据挂在 pi-ai 的 `model.headers` 上**。pi-ai 的 openai-completions 客户端
-  会把 `model.headers` 合并进请求头，且 `options.headers` 最后合并，因此
-  `x-api-vkey` / `api-key` / `Authorization` 都能直达网关 —— 不需要像
-  workbuddy 那样起一个 loopback 代理。
-- **catalog 去重**：网关返回 `builtinModels` + `personalModels` 两列，同一模型可能
-  两边都有（实测 10 行仅 7 个唯一 id）。DSH 的 `INVALID_CATALOG` 对重复 id 直接报错，
-  故按「personal 优先」去重。
-- **注册不阻塞网络**：先用内置兜底模型挂载，catalog 拉取成功后替换。
+# 装依赖（插件自身的 pi-ai；DSH 内核包由宿主提供，见 §6）
+npm install
+
+# 装进 DSH 桌面版 profile
+dsh plugin --profile desktop add file:$(pwd)
+```
+
+然后**重启 DSH**，模型选择器里会出现 **CANNBOT** 分组。
+
+> `~/.dsh/profiles/desktop` 由 App 管理。若 CLI 报 `EPERM`，说明该发行版不允许
+> 独立 CLI 写 `desktop` profile；此时改用 Web/TUI profile，或参见 §7 手动挂载。
 
 ---
 
-## 3. 文件
-
-```
-dsh-cannbot-connect/
-├── lib/index.js        # 插件实现（provider + adapter）
-├── cordis.patch.yml    # 挂载声明：insert llm-cannbot
-├── package.json
-└── e2e.mjs             # 端到端验证脚本
-```
-
----
-
-## 4. 验证（已通过）
-
-用**从 app.asar 解出的真实内核**（`dsh-llm@0.2.1-rc.2`、`@earendil-works/pi-ai@1.1.0`）
-跑通，不是拿近似版本模拟：
+## 4. 验证
 
 ```bash
 node e2e.mjs
 ```
 
-结果：
+它会用真实的 `LlmRuntime` 注册插件，拉一次模型列表，再实际流式发一条请求。成功输出：
 
 ```
 jwt: present
@@ -84,36 +78,105 @@ vk : present
 [info] dsh-cannbot-connect: 7 models available
 live models: 7 -> deepseek-v4.1-flash, qwen3.8-max, qwen3.8-flash,
                   glm-5.3, glm-5.3-flash, deepseek-v4-flash, deepseek-v4-pro
-resolved info: {"provider":"cannbot","id":"deepseek-v4.1-flash",
-                "context":{"contextWindow":1048576},
-                "reasoning":{"efforts":[off,minimal,low,medium,high]}}
-finish: {"type":"finish","reason":{"kind":"stop"}}
+resolved deepseek-v4.1-flash: context=1048576 efforts=off/minimal/low/medium/high
+finish: {"kind":"stop"}
 text  : "PONG"
+reason: 30 chars
+
+PASS: CANNBOT is reachable through the DSH LLM seam.
 ```
+
+失败时会打印 `FAIL: ...` 并以退出码 1 结束，例如：
+
+- `jwt: MISSING` → 没登录过 CANNWork
+- `the live catalog did not load` → JWT 过期，重开 CANNWork 再试
 
 ---
 
-## 5. 安装
+## 5. 原理
 
-装进 DSH 桌面版 profile（把路径换成本仓库在你机器上的位置）：
+### opencode 侧（逆向自 `cannwork-auth.js`）
 
-```bash
-git clone https://gitcode.com/gentle-knight/dsh-cannbot-connect.git
-dsh plugin --profile desktop add file:$(pwd)/dsh-cannbot-connect
-```
+插件通过三个钩子工作：
 
-然后重启 DSH，模型选择器里会出现 **CANNBOT** 分组。
+1. **`config`** — 注册 `cannbot` provider（OpenAI 兼容，`baseURL` 指向网关），
+   并用 JWT 调 `GET /cannbot/api/models/personal` 动态拉模型列表
+2. **`auth`** — 声明一个 `CANNBOT Virtual Key (VK)` 登录方式
+3. **`chat.headers`** — **每个请求**注入 `x-api-vkey` / `api-key` / `Authorization: Bearer <JWT>`
 
-> 注意：`~/.dsh/profiles/desktop` 由 App 管理。写入该目录需要文件系统授权；
-> 官方 Electron 版可能拒绝独立 CLI 写 `desktop` profile。
+网关 base URL：`https://cannbot.hicann.cn/gateway/compatible-mode/v1`
+
+### DSH 侧（本插件）
+
+接入点是 `ctx.llm.registerAdapter(providers, adapter)`，基类 `PiAiAdapter`
+来自 `@deepseek-ai/dsh-llm-pi-ai`。三个实现要点：
+
+- **凭据每次操作现读磁盘**，不缓存 → CANNWork 刷新令牌后，下一个 DSH 请求立刻生效，**无需重启**
+- **凭据挂在 pi-ai 的 `model.headers` 上** → 直连网关，不需要像 workbuddy 那样起 loopback 代理
+- **catalog 去重**：网关的 `builtinModels` 与 `personalModels` 两列会重叠
+  （实测 10 行仅 7 个唯一 id），而 DSH 对重复 id 直接报 `INVALID_CATALOG`，
+  故按「personal 优先」去重
+- **注册不阻塞网络**：先用内置兜底模型挂载，catalog 拉取成功后替换
 
 ---
 
-## 6. 前置条件与限制
+## 6. 依赖说明
 
-- **必须登录过 CANNWork**：JWT 和 VK 都由它维护。未登录时插件仍会注册 route，
-  但请求会以 401 失败；`e2e.mjs` 会打印 `jwt: MISSING`。
-- **JWT 有效期 24h**：靠 CANNWork 自动续期。DSH 侧只读，令牌过期就跟着失效；
-  重新打开/登录 CANNWork 即可恢复。
-- **`auth.json` 是 opencode 的密钥库**：读不到时按「未配置」降级，不抛错。
-- 模型按账号可见性返回；换账号后重新请求即反映新 roster（无需重启）。
+插件**只把自己私有的 `pi-ai` 声明为 `dependencies`**；其余全部是 `peerDependencies`，
+因为它们是 **DSH 宿主提供的**，不应由插件再装一份（否则会出现第二个 `LlmAdapter` 类，
+`instanceof` 失效）。
+
+| 包 | 声明 | 说明 |
+|---|---|---|
+| `@earendil-works/pi-ai` | `dependencies: 1.3.0` | 插件私有，`npm install` 会装 |
+| `@deepseek-ai/dsh-llm` | peer `0.2.1-rc.2` | DSH 宿主提供 |
+| `@deepseek-ai/dsh-llm-pi-ai` | peer `0.2.1-rc.2` | DSH 宿主提供（`PiAiAdapter` 基类） |
+| `@deepseek-ai/cordis` | peer `^4.0.5` | DSH 宿主提供 |
+
+> DSH profile 使用 `nodeLinker: hoisted` + `autoInstallPeers: false`，
+> 所以 `peerDependencies` 不会被打进你的安装，只在运行时向宿主解析。
+
+已验证：全新 clone → `npm install` → `node e2e.mjs` → `PASS`。
+
+---
+
+## 7. 手动挂载（CLI 不可用时）
+
+把插件加进 profile 的 `package.json` 依赖与 bundles，再在
+`cordis.patch.yml` 里声明：
+
+```yaml
+- insert:
+    - id: llm-cannbot
+      name: dsh-cannbot-connect
+```
+
+本仓库自带的 `cordis.patch.yml` 内容相同，`package.json` 的 `dsh.bundle.patch`
+已指向它，作为 bundle 安装时会自动生效。
+
+---
+
+## 8. 已知限制
+
+- **强依赖 CANNWork 登录**：JWT 24h 过期，靠 CANNWork 自动续期；DSH 侧只读，
+  令牌过期就跟着失效，重开 CANNWork 即恢复
+- **`auth.json` 是 opencode 的密钥库**：读不到时按「未配置」降级，不抛错
+- **模型按账号可见性返回**：换账号后重新请求即反映新 roster（无需重启）
+- **内核版本敏感**：`PiAiAdapter` 的构造函数契约在 DSH 版本间可能变化，
+  升级内核后请重跑 `node e2e.mjs`
+
+---
+
+## 9. 安全说明
+
+本仓库**不包含、也不会写入**任何凭据：
+
+- VK / JWT 只在运行时从本机 opencode 文件读取，不进仓库、不进日志、不进 git 历史
+- `.gitignore` 排除 `node_modules/` 与本地验证产物
+- `e2e.mjs` 只打印 `present` / `MISSING`，不打印凭据内容
+
+---
+
+## 10. 许可
+
+MIT，见 [LICENSE](./LICENSE)。
