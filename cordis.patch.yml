@@ -1,0 +1,7 @@
+# Register the CANNBOT provider without changing the profile's default model.
+# The plugin re-reads CANNWork's sign-in (session.json) and the CANNBOT VK
+# (auth.json) on every request, so a login or token refresh in the extension
+# reaches the next DSH request with no restart.
+- insert:
+    - id: llm-cannbot
+      name: dsh-cannbot-connect
