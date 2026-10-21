@@ -22,7 +22,7 @@ CANNBOT 网关要求**两个凭据同时具备**（实测，缺一即 401）：
 
 ---
 
-## 2. 前置条件（重要）
+## 2. 前置条件
 
 **必须先装过 CANNWork 并登录过。** 插件不产生凭据，只消费它们：
 
@@ -33,12 +33,12 @@ CANNBOT 网关要求**两个凭据同时具备**（实测，缺一即 401）：
 
 （若你设了 `XDG_DATA_HOME`，路径以它为前缀。）
 
-没登录过的话，插件仍会注册但不能用——请先在 `~/.local/share/opencode/session.json`
-确认存在 `accessToken`，或直接跑 `node e2e.mjs` 看它报什么。
+没登录过的话，插件仍会注册但不能用——请先确认 `session.json` 里存在 `accessToken`，
+或直接跑 `node e2e.mjs` 看它报什么。
 
 其他要求：
 
-- **DSH 内核 `0.2.1-rc.2`**（本插件针对该版本的 `LlmAdapter` / `PiAiAdapter` 契约编写）
+- **DSH 内核 `0.2.1-rc.2`**（本插件针对该版本的 `LlmAdapter` 契约编写）
 - **Node.js `^22.19.0 || >=24.0.0`**
 - 能访问 `cannbot.hicann.cn`
 
@@ -46,15 +46,11 @@ CANNBOT 网关要求**两个凭据同时具备**（实测，缺一即 401）：
 
 ## 3. 安装
 
+插件**没有任何运行时依赖**，装进 profile 只需要一条命令：
+
 ```bash
 git clone https://gitcode.com/gentle-knight/dsh-cannbot-connect.git
-cd dsh-cannbot-connect
-
-# 装依赖（插件自身的 pi-ai；DSH 内核包由宿主提供，见 §6）
-npm install
-
-# 装进 DSH 桌面版 profile
-dsh plugin --profile desktop add file:$(pwd)
+dsh plugin --profile desktop add file:$(pwd)/dsh-cannbot-connect
 ```
 
 然后**重启 DSH**，模型选择器里会出现 **CANNBOT** 分组。
@@ -66,22 +62,29 @@ dsh plugin --profile desktop add file:$(pwd)
 
 ## 4. 验证
 
+验证脚本需要几个开发期依赖（宿主内核包，仅测试用）：
+
 ```bash
+npm install
 node e2e.mjs
 ```
 
-它会用真实的 `LlmRuntime` 注册插件，拉一次模型列表，再实际流式发一条请求。成功输出：
+它会用真实的 `LlmRuntime` 注册插件，然后依次验证：模型列表、模型元信息、
+一次文本+推理回合、**一次工具调用**、以及**工具结果的多轮回放**。成功输出：
 
 ```
 jwt: present
 vk : present
 [info] dsh-cannbot-connect: 7 models available
-live models: 7 -> deepseek-v4.1-flash, qwen3.8-max, qwen3.8-flash,
-                  glm-5.3, glm-5.3-flash, deepseek-v4-flash, deepseek-v4-pro
-resolved deepseek-v4.1-flash: context=1048576 efforts=off/minimal/low/medium/high
-finish: {"kind":"stop"}
-text  : "PONG"
-reason: 30 chars
+models: 7 -> deepseek-v4.1-flash, qwen3.8-max, qwen3.8-flash,
+             glm-5.3, glm-5.3-flash, deepseek-v4-flash, deepseek-v4-pro
+resolve deepseek-v4.1-flash: context=1048576 efforts=minimal/low/medium/high/max/xhigh input=text
+plain: finish={"kind":"stop"} text="PONG" reasoning=55ch
+ok   text turn returned the expected reply
+ok   usage reported (in=36 out=17)
+tool : finish={"kind":"tool-calls"} calls=get_weather({"city": "Beijing"})
+ok   tool call assembled (get_weather city=Beijing, id=call_00_...)
+ok   tool result replayed into a final answer
 
 PASS: CANNBOT is reachable through the DSH LLM seam.
 ```
@@ -95,9 +98,9 @@ PASS: CANNBOT is reachable through the DSH LLM seam.
 
 ## 5. 原理
 
-### opencode 侧（逆向自 `cannwork-auth.js`）
+### 5.1 opencode 侧（逆向自 `cannwork-auth.js`）
 
-插件通过三个钩子工作：
+opencode 插件通过三个钩子工作：
 
 1. **`config`** — 注册 `cannbot` provider（OpenAI 兼容，`baseURL` 指向网关），
    并用 JWT 调 `GET /cannbot/api/models/personal` 动态拉模型列表
@@ -106,37 +109,39 @@ PASS: CANNBOT is reachable through the DSH LLM seam.
 
 网关 base URL：`https://cannbot.hicann.cn/gateway/compatible-mode/v1`
 
-### DSH 侧（本插件）
+### 5.2 DSH 侧（本插件）
 
-接入点是 `ctx.llm.registerAdapter(providers, adapter)`，基类 `PiAiAdapter`
-来自 `@deepseek-ai/dsh-llm-pi-ai`。三个实现要点：
+本插件是一个 **first-class `LlmAdapter`**：直接用 `fetch` + SSE 讲网关的
+OpenAI 兼容协议，不包一层 provider SDK，因此**没有任何第三方运行时依赖**。
 
-- **凭据每次操作现读磁盘**，不缓存 → CANNWork 刷新令牌后，下一个 DSH 请求立刻生效，**无需重启**
-- **凭据挂在 pi-ai 的 `model.headers` 上** → 直连网关，不需要像 workbuddy 那样起 loopback 代理
+- **接入点**：`ctx.llm.registerAdapter(['cannbot'], adapter)`——DSH 文档化的扩展点
+- **凭据每次请求现读磁盘**，不缓存 → CANNWork 刷新令牌后，下一个 DSH 请求立刻生效，**无需重启**
+- **注册不阻塞网络**：先用内置兜底模型挂载，catalog 拉取成功后替换
 - **catalog 去重**：网关的 `builtinModels` 与 `personalModels` 两列会重叠
   （实测 10 行仅 7 个唯一 id），而 DSH 对重复 id 直接报 `INVALID_CATALOG`，
   故按「personal 优先」去重
-- **注册不阻塞网络**：先用内置兜底模型挂载，catalog 拉取成功后替换
+- **多轮保真**：assistant 历史里的 `reasoning_content` 会回传给网关，
+  工具调用以 `tool_calls` / `tool_call_id` 往返（已实测）
+- **失败分类**：映射到 DSH 的错误体系（`AUTH` / `RATE_LIMIT` / `SERVER` /
+  `QUOTA` / `CONTEXT_WINDOW_EXCEEDED` / `TIMEOUT` / `TRANSPORT` 等），
+  并按 `Retry-After` 回填 `providerRetryAfterMs`
 
 ---
 
 ## 6. 依赖说明
 
-插件**只把自己私有的 `pi-ai` 声明为 `dependencies`**；其余全部是 `peerDependencies`，
-因为它们是 **DSH 宿主提供的**，不应由插件再装一份（否则会出现第二个 `LlmAdapter` 类，
-`instanceof` 失效）。
+插件**零运行时依赖**：只把自己私有的实现留在代码里，宿主提供的包全部声明为
+`peerDependencies`，`devDependencies` 仅用于跑 `e2e.mjs`。
 
 | 包 | 声明 | 说明 |
 |---|---|---|
-| `@earendil-works/pi-ai` | `dependencies: 1.3.0` | 插件私有，`npm install` 会装 |
-| `@deepseek-ai/dsh-llm` | peer `0.2.1-rc.2` | DSH 宿主提供 |
-| `@deepseek-ai/dsh-llm-pi-ai` | peer `0.2.1-rc.2` | DSH 宿主提供（`PiAiAdapter` 基类） |
-| `@deepseek-ai/cordis` | peer `^4.0.5` | DSH 宿主提供 |
+| `@deepseek-ai/dsh-llm` | peer `0.2.1-rc.2` | DSH 宿主提供（`LlmAdapter`、错误体系） |
+| `@deepseek-ai/schemastery` | peer `^3.18.5` | DSH 宿主提供（`Config` schema） |
+| `@deepseek-ai/cordis` | peer `^4.0.5` | DSH 宿主提供（运行时容器） |
 
 > DSH profile 使用 `nodeLinker: hoisted` + `autoInstallPeers: false`，
-> 所以 `peerDependencies` 不会被打进你的安装，只在运行时向宿主解析。
-
-已验证：全新 clone → `npm install` → `node e2e.mjs` → `PASS`。
+> 所以 `peerDependencies` 不会被装进 profile，只在运行时向宿主解析。
+> 实测：`dsh plugin add` 只新增 **1 个包**（插件自己）。
 
 ---
 
@@ -152,18 +157,28 @@ PASS: CANNBOT is reachable through the DSH LLM seam.
 ```
 
 本仓库自带的 `cordis.patch.yml` 内容相同，`package.json` 的 `dsh.bundle.patch`
-已指向它，作为 bundle 安装时会自动生效。
+已指向它，作为 bundle 安装时会自动生效。也可用 `config` 覆盖默认值：
+
+```yaml
+- id: llm-cannbot
+  name: dsh-cannbot-connect
+  config:
+    baseURL: https://cannbot.hicann.cn/gateway/compatible-mode/v1
+    streamIdleTimeoutMs: 300000
+```
 
 ---
 
 ## 8. 已知限制
 
+- **文本输入**：本路由对外只声明 `text`。图片/文件块会被明确拒绝，而不是发出去后被网关打回
+- **不支持 `off` 档位**：网关对 `reasoning_effort=off` 返回 400 `InvalidParameter`，
+  故只提供 `minimal/low/medium/high/max/xhigh`；不指定档位即用 provider 默认
 - **强依赖 CANNWork 登录**：JWT 24h 过期，靠 CANNWork 自动续期；DSH 侧只读，
   令牌过期就跟着失效，重开 CANNWork 即恢复
 - **`auth.json` 是 opencode 的密钥库**：读不到时按「未配置」降级，不抛错
 - **模型按账号可见性返回**：换账号后重新请求即反映新 roster（无需重启）
-- **内核版本敏感**：`PiAiAdapter` 的构造函数契约在 DSH 版本间可能变化，
-  升级内核后请重跑 `node e2e.mjs`
+- **内核版本敏感**：`LlmAdapter` 契约在 DSH 版本间可能变化，升级内核后请重跑 `node e2e.mjs`
 
 ---
 
@@ -174,6 +189,7 @@ PASS: CANNBOT is reachable through the DSH LLM seam.
 - VK / JWT 只在运行时从本机 opencode 文件读取，不进仓库、不进日志、不进 git 历史
 - `.gitignore` 排除 `node_modules/` 与本地验证产物
 - `e2e.mjs` 只打印 `present` / `MISSING`，不打印凭据内容
+- 仓库自带 `check-secrets.sh`，推送前可跑一次，同时检查工作区与 git 历史
 
 ---
 
