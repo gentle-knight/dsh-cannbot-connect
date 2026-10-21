@@ -23,6 +23,10 @@
   "engines": {
     "node": "^22.19.0 || >=24.0.0"
   },
+  "scripts": {
+    "test": "node test/security.mjs",
+    "test:e2e": "node e2e.mjs"
+  },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.5",
     "@deepseek-ai/dsh-llm": "0.2.1-rc.2",

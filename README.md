@@ -184,15 +184,118 @@ OpenAI 兼容协议，不包一层 provider SDK，因此**没有任何第三方�
 
 ## 9. 安全说明
 
-本仓库**不包含、也不会写入**任何凭据：
+### 9.1 凭据去向
 
-- VK / JWT 只在运行时从本机 opencode 文件读取，不进仓库、不进日志、不进 git 历史
+本插件处理的只有两个凭据，都来自 CANNWork 写下的本机文件：
+
+| 凭据 | 读取位置 | 发送到 |
+|---|---|---|
+| JWT（`accessToken`） | `~/.local/share/opencode/session.json` | `baseURL` 与 `modelsURL` |
+| VK（`cannbot.key`） | `~/.local/share/opencode/auth.json` | 仅 `baseURL` |
+
+**这两个端点由配置决定**。默认值就是 CANNBOT 官方网关；如果你把 `baseURL` /
+`modelsURL` 改到别处，凭据就会发到别处——这一点与所有可配置端点的 provider 相同。
+
+### 9.2 已实施的加固
+
+- **拒绝明文端点**：`baseURL` / `modelsURL` 必须是 `https`；仅回环地址
+  （`localhost` / `127.0.0.1` / `[::1]`）允许 `http`。不安全的配置在
+  **写入处**就被拒绝，而不是等第一个请求。
+- **不跟随重定向**：两个请求都带 `redirect: 'error'`。否则一个 302 就能把
+  `Authorization` 转发到别的源。
+- **失败文本脱敏**：网关返回的错误正文在进入诊断信息前，会按**值本身**
+  （而非正则）把 JWT/VK 替换成 `[redacted]`。
+- **防头注入**：凭据经 `assertUsableApiKey()` 校验——只允许可打印 ASCII、
+  不含空格——换行之类无法进入 HTTP 头。
+- **零运行时依赖**：不引入第三方供应链；安装期无 `postinstall`/`preinstall` 脚本。
+- **不写盘**：插件只读凭据文件，从不写回。
+
+### 9.3 回归测试
+
+```bash
+npm test        # 离线，不需要 CANNBOT 登录
+```
+
+覆盖：明文端点被拒、回环例外、重定向不外传凭据（断言重定向目标**从未被访问**）、
+失败文本已脱敏。全部通过输出：
+
+```
+ok   plain-http baseURL is refused
+ok   plain-http modelsURL is refused
+ok   a malformed endpoint is refused
+ok   loopback http is allowed (local mock/proxy)
+ok   a redirecting endpoint fails the request instead of following it
+ok   the redirect target was never contacted (credentials stayed put)
+ok   credential material is redacted out of provider failure text
+
+PASS: credential-handling checks hold.
+```
+
+### 9.4 仓库本身的卫生
+
+- VK / JWT 不进仓库、不进日志、不进 git 历史
 - `.gitignore` 排除 `node_modules/` 与本地验证产物
-- `e2e.mjs` 只打印 `present` / `MISSING`，不打印凭据内容
-- 仓库自带 `check-secrets.sh`，推送前可跑一次，同时检查工作区与 git 历史
+- `e2e.mjs` 只打印 `present` / `MISSING`
+- `check-secrets.sh` 同时扫描工作区与 git 历史，推送前可跑
+
+### 9.5 残留风险（如实说明）
+
+- 本插件读取 opencode 的凭据文件。**能有权限读这些文件的进程，本来就已经持有该凭据**，
+  所以这不是新增的暴露面；但它确实把「opencode 的一处凭据」复用到了 DSH。
+- 凭据会短暂存在于进程内存中，这是任何使用它们的 adapter 都无法避免的。
+- 插件加载时（`apply`）会立刻用 JWT 拉一次模型列表——这是运行期行为、非安装期，
+  但如果你不希望启动即联网，可以把 `modelsURL` 指向自己的镜像。
 
 ---
 
-## 10. 许可
+## 10. 投稿到插件市场
+
+DSH 插件市场的目录来自 **[awesome-dsh-plugins](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)**：
+向 `data/plugins/` 提**一个 YAML 文件**即可，站点与市场会自动收录（通常一天内）。
+
+### 10.1 需要先满足的前置条件
+
+| 条件 | 本仓库现状 |
+|---|---|
+| `package.json` 声明 `dsh.bundle`（安装前提） | ✅ 已有 |
+| 仓库根有 `cordis.patch.yml` | ✅ 已有 |
+| 真实可用代码，非占位 | ✅ 有 e2e 与安全测试 |
+| 仓库创建满 1 天 | ✅ 已满 |
+| 仓库添加 `dsh-plugin` topic | ⚠️ 待加 |
+| **`url` 必须是 GitHub 仓库** | ❌ **当前在 GitCode** |
+
+最后一条是硬门槛：该目录现有 **1006 条全部指向 github.com**，投稿指南也写明
+`url` 必须与仓库完全一致。因此**想上架，需要一个 GitHub 仓库**（镜像或迁移均可）。
+
+### 10.2 条目文件
+
+在 `awesome-dsh-plugins` 仓库新建 `data/plugins/<owner>__<repo>.yml`：
+
+```yaml
+url: https://github.com/<owner>/dsh-cannbot-connect
+name: <owner>/dsh-cannbot-connect
+category: model
+description:
+  en: Bring CANNBOT gateway models into DeepSeek Harness by reusing CANNWork's opencode sign-in.
+  zh: 复用 CANNWork 的 opencode 登录态，把 CANNBOT 网关的模型接入 DeepSeek Harness。
+```
+
+分类用 `model`（"Models & Providers / 模型与账号接入"），与本插件做的事一致。
+
+### 10.3 推荐：发布到 npm
+
+投稿指南指出，发布 npm 包可让安装**跳过构建授权**（`allowBuilds`）。本插件零运行时
+依赖，npm 包很小。发布前需要：
+
+1. 删掉 `package.json` 里的 `"private": true`（现在刻意保留，防止误发布）
+2. `npm login`（需要你自己的 npm 账号）
+3. `npm publish --access public`
+
+不发 npm 也可以：把预构建 tarball 挂到 GitHub Release，然后在条目里加
+`tarball: <url>`，市场会优先展示它。
+
+---
+
+## 11. 许可
 
 MIT，见 [LICENSE](./LICENSE)。
