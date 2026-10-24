@@ -38,7 +38,7 @@ CANNBOT 网关要求**两个凭据同时具备**（实测，缺一即 401）：
 
 其他要求：
 
-- **DSH 内核 `0.2.1-rc.2`**（本插件针对该版本的 `LlmAdapter` 契约编写）
+- **DSH 内核 `>=0.2.1-rc.2 <0.3.0`**（同时声明在 `engines.dsh` 与 `peerDependencies`，宿主据此判定兼容性）
 - **Node.js `^22.19.0 || >=24.0.0`**
 - 能访问 `cannbot.hicann.cn`
 
@@ -135,7 +135,7 @@ OpenAI 兼容协议，不包一层 provider SDK，因此**没有任何第三方�
 
 | 包 | 声明 | 说明 |
 |---|---|---|
-| `@deepseek-ai/dsh-llm` | peer `0.2.1-rc.2` | DSH 宿主提供（`LlmAdapter`、错误体系） |
+| `@deepseek-ai/dsh-llm` | peer `>=0.2.1-rc.2 <0.3.0` | DSH 宿主提供（`LlmAdapter`、错误体系） |
 | `@deepseek-ai/schemastery` | peer `^3.18.5` | DSH 宿主提供（`Config` schema） |
 | `@deepseek-ai/cordis` | peer `^4.0.5` | DSH 宿主提供（运行时容器） |
 
@@ -179,6 +179,22 @@ OpenAI 兼容协议，不包一层 provider SDK，因此**没有任何第三方�
 - **`auth.json` 是 opencode 的密钥库**：读不到时按「未配置」降级，不抛错
 - **模型按账号可见性返回**：换账号后重新请求即反映新 roster（无需重启）
 - **内核版本敏感**：`LlmAdapter` 契约在 DSH 版本间可能变化，升级内核后请重跑 `node e2e.mjs`
+
+### 兼容性声明与判定规则
+
+DSH 宿主按 `engines.dsh` 与 `peerDependencies` 里的 `@deepseek-ai/dsh*` 区间判定插件是否
+兼容，**两者都必须满足**：
+
+```json
+"engines": { "dsh": ">=0.2.1-rc.2 <0.3.0" },
+"peerDependencies": { "@deepseek-ai/dsh-llm": ">=0.2.1-rc.2 <0.3.0" }
+```
+
+早期版本把 `dsh-llm` 精确钉成 `0.2.1-rc.2`，App 升到 `0.2.1-rc.3` 后就被判为
+`incompatible` 并拒绝启动——**精确钉版本在宿主小版本升级时会立刻失效**，所以现在用区间。
+
+升级内核后若被判定不兼容，先确认契约是否真的变了（本插件只依赖 `LlmAdapter` 基类与
+`StreamChunk` 协议，二者在 rc.2→rc.3 间无变化），再相应放宽区间。
 
 ---
 
