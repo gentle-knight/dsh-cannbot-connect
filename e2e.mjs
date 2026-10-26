@@ -30,7 +30,7 @@ console.log(`vk : ${vk === undefined ? 'MISSING' : 'present'}`)
 if (jwt === undefined || vk === undefined) {
   fail(
     'CANNWork sign-in not found. Open CANNWork (cannbot-toolkit) in VS Code/Cursor and sign in;\n' +
-      '      it writes ~/.local/share/opencode/session.json (JWT) and auth.json (VK).',
+      '      it writes session.json (JWT) under ~/.local/share/opencode and auth.json (VK) under ~/.config/opencode.',
   )
   process.exit(1)
 }

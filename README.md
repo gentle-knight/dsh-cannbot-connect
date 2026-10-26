@@ -29,11 +29,19 @@ CANNBOT 网关要求**两个凭据同时具备**（实测，缺一即 401）：
 | 凭据 | 文件 | 由谁写入/续期 |
 |---|---|---|
 | JWT | `~/.local/share/opencode/session.json` → `accessToken` | CANNWork，24h 有效，自动刷新 |
-| VK | `~/.local/share/opencode/auth.json` → `cannbot.key` | CANNWork |
+| VK | `~/.config/opencode/auth.json` → `cannbot.key` | CANNWork |
 
-（若你设了 `XDG_DATA_HOME`，路径以它为前缀。）
+插件会**按顺序自适应查找** opencode 的两个目录，不同版本的 CANNWork/opencode 写在哪一处都能读到：
 
-没登录过的话，插件仍会注册但不能用——请先确认 `session.json` 里存在 `accessToken`，
+1. 数据目录：`$XDG_DATA_HOME/opencode`（默认 `~/.local/share/opencode`）
+2. 配置目录：`$XDG_CONFIG_HOME/opencode`（默认 `~/.config/opencode`）
+
+- **JWT**：先找数据目录的 `session.json`，再找配置目录的。
+- **VK**：先按 `cannbot.key` 找两处的 `auth.json`；旧版 opencode 把同一个 `vk-…` 值存在
+  `auth.json` 的 `cannbot-cli.refresh` 里，作为兜底（只接受 `vk-` 开头的值，避免把真正的
+  刷新令牌当成 VK 发出去）。
+
+没登录过的话，插件仍会注册但不能用——请先确认某处 `session.json` 里存在 `accessToken`，
 或直接跑 `node e2e.mjs` 看它报什么。
 
 其他要求：
