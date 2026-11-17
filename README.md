@@ -155,6 +155,10 @@ OpenAI 兼容协议，不包一层 provider SDK，因此**没有任何第三方�
   请求时优先用该行 VK，缺失（或还在兜底目录）才回退 `auth.json` 的账号 VK
 - **多轮保真**：assistant 历史里的 `reasoning_content` 会回传给网关，
   工具调用以 `tool_calls` / `tool_call_id` 往返（已实测）
+- **usage 自洽**：网关 `prompt_tokens` 含缓存命中，adapter 映射成内核的三桶 DISJOINT；
+  并按宿主 `normalizeUsage` 的不变式做防护——命中数 clamp 到 prompt、`null`/字符串/负数
+  不计、`reasoning_tokens` clamp 到 output、`totalTokens` 与桶不一致时用 prompt+output
+  派生。宿主遇到自相矛盾的样本会**整条丢弃**，所以这里不能只保证“数字大致对”
 - **失败分类**：映射到 DSH 的错误体系（`AUTH` / `RATE_LIMIT` / `SERVER` /
   `QUOTA` / `CONTEXT_WINDOW_EXCEEDED` / `TIMEOUT` / `TRANSPORT` 等），
   并按 `Retry-After` 回填 `providerRetryAfterMs`
@@ -345,9 +349,13 @@ npm test        # 离线，不需要 CANNBOT 登录
 覆盖四组：① 明文端点被拒、回环例外、重定向不外传凭据（断言重定向目标**从未被访问**）、
 失败文本已脱敏；② 适配器的 usage 映射——网关的 `prompt_tokens` 含缓存命中，而内核的
 `inputTokens` 只算未命中，命中数必须减出去（否则会话里「缓存命中」的分母会重复计数，
-永远不超过 50%）。第②组用 mock SSE 上游覆盖 `prompt_tokens_details.cached_tokens`、
-DeepSeek 拼写的 `prompt_cache_hit_tokens`、无缓存字段、命中为 0、`cached > prompt`
-五种 wire 形状，并断言 `input + cacheRead + output === total` 与复算后的命中率；
+永远不超过 50%）。第②组还把**宿主自己的 usage 判定规则**（`dsh-client-ui-chat` 的
+`normalizeUsage`）抄进测试：宿主遇到自相矛盾的样本会**整条丢弃**，所以每个 shape 都必须
+通过该 gate，并断言 `input + cacheRead + output === total`。覆盖的 wire 形状包括
+`prompt_tokens_details.cached_tokens`、DeepSeek 拼写的 `prompt_cache_hit_tokens`、无缓存
+字段、命中为 0、全命中、`cached > prompt`（命中数被 clamp 到 prompt）、`null`/字符串/负数
+等非法计数、`reasoning_tokens > completion_tokens`、缺 `prompt_tokens`、矛盾或缺失的
+`total_tokens`；
 ③ 凭据选择与 403 分类——catalog 每行 `apiKey` 被保留且请求优先使用、无 key 行与兜底
 目录回退账号 VK、401 与普通 403 判 `AUTH`、正文点名模型的 403 判 `MODEL_UNSUPPORTED`，
 且回显的 VK 在错误信息中被脱敏；④ 图片输入——视觉/文本模型的模态声明、图片
@@ -360,9 +368,10 @@ DeepSeek 拼写的 `prompt_cache_hit_tokens`、无缓存字段、命中为 0、`
 ok   credential material is redacted out of provider failure text
 
 PASS: credential-handling checks hold.
-ok   cached > prompt: inputTokens clamps at zero = 0
+ok   cached > prompt: the host gate accepts the sample (total=110)
+ok   reasoning > output: reasoningTokens clamps to output = 10
 
-PASS: wire usage is mapped to disjoint harness counts.
+PASS: wire usage is mapped to disjoint harness counts the host accepts.
 ok   401: code stays AUTH = "AUTH"
 ok   403 model refusal: echoed VK is redacted = false
 
