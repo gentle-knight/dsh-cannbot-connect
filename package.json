@@ -1,17 +1,19 @@
 {
   "name": "dsh-cannbot-connect",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "private": true,
-  "description": "Bring CANNBOT gateway models into DeepSeek Harness by reusing CANNWork's opencode sign-in (VK + JWT).",
+  "description": "Bring CANNBOT gateway models into DeepSeek Harness and into any OpenAI-compatible editor sidebar (VS Code chat), by reusing CANNWork's opencode sign-in (VK + JWT).",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
     ".": "./lib/index.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./local-server": "./lib/local-server.js"
   },
   "files": [
     "lib",
+    "scripts",
     "cordis.patch.yml",
     "README.md"
   ],
@@ -25,8 +27,12 @@
     "dsh": ">=0.2.1-rc.2 <0.3.0"
   },
   "scripts": {
-    "test": "node test/security.mjs && node test/adapter-usage.mjs && node test/adapter-auth.mjs && node test/adapter-image.mjs",
-    "test:e2e": "node e2e.mjs"
+    "test": "node test/security.mjs && node test/credentials.mjs && node test/adapter-usage.mjs && node test/adapter-auth.mjs && node test/adapter-image.mjs && node test/local-server.mjs",
+    "test:e2e": "node e2e.mjs",
+    "serve": "node lib/local-server.js",
+    "install:vscode": "node scripts/install-vscode.mjs",
+    "install:launchd": "node scripts/install-launchd.mjs",
+    "install:tunnel": "node scripts/install-remote-tunnel.mjs"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.5",
@@ -44,9 +50,16 @@
     "url": "git+https://gitcode.com/gentle-knight/dsh-cannbot-connect.git"
   },
   "keywords": [
-    "dsh-plugin",
-    "deepseek-harness",
     "cannbot",
-    "model-provider"
-  ]
+    "copilot-chat",
+    "deepseek-harness",
+    "dsh-plugin",
+    "local-model-service",
+    "model-provider",
+    "openai-compatible",
+    "vscode"
+  ],
+  "bin": {
+    "cannbot-local": "./lib/local-server.js"
+  }
 }
