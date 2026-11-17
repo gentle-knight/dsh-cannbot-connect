@@ -24,7 +24,7 @@ import { join } from 'node:path'
 import { CannbotAdapter, PROVIDER } from '../lib/index.js'
 
 const JWT = 'test-jwt-0123456789abcdef'
-const VK = 'test-vk-0123456789abcdef'
+const VK = 'test-vk-not-a-real-credential'
 
 let failures = 0
 const fail = (message) => {

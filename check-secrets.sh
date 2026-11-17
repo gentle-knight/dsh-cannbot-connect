@@ -7,7 +7,11 @@ set -e
 
 cd "$(dirname "$0")"
 
-PATTERNS='vk-[0-9a-fA-F]{16,}|eyJ[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9]{20,}|GITCODE_API_TOKEN|ghp_[A-Za-z0-9]{20,}|/Users/[A-Za-z0-9_-]+/'
+# A real CANNBOT VK is `vk-` followed by 32 hex characters, so the length bound
+# below matches the real credential shape while an obviously fake fixture such
+# as `test-vk-...` no longer trips the scanner (and keeps the git-history scan
+# usable without rewriting history).
+PATTERNS='vk-[0-9a-fA-F]{32,}|eyJ[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9]{20,}|GITCODE_API_TOKEN|ghp_[A-Za-z0-9]{20,}|/Users/[A-Za-z0-9_-]+/'
 STATUS=0
 
 echo "== working tree =="
