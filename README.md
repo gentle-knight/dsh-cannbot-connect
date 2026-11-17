@@ -29,7 +29,7 @@ CANNBOT 网关要求**两个凭据同时具备**（实测，缺一即 401）：
 | 凭据 | 文件 | 由谁写入/续期 |
 |---|---|---|
 | JWT | `~/.local/share/opencode/session.json` → `accessToken` | CANNWork，24h 有效，自动刷新 |
-| VK | `~/.config/opencode/auth.json` → `cannbot.key` | CANNWork |
+| VK | `~/.config/opencode/auth.json` → `cannbot.key`（请求时优先用 catalog 该行的 `apiKey`） | CANNWork |
 
 插件会**按顺序自适应查找** opencode 的两个目录，不同版本的 CANNWork/opencode 写在哪一处都能读到：
 
@@ -40,6 +40,9 @@ CANNBOT 网关要求**两个凭据同时具备**（实测，缺一即 401）：
 - **VK**：先按 `cannbot.key` 找两处的 `auth.json`；旧版 opencode 把同一个 `vk-…` 值存在
   `auth.json` 的 `cannbot-cli.refresh` 里，作为兜底（只接受 `vk-` 开头的值，避免把真正的
   刷新令牌当成 VK 发出去）。
+- **逐模型 VK（优先）**：`GET /cannbot/api/models/personal` 每一行自带该模型的 `apiKey`，
+  builtin 行与账号级 VK 并不相同。请求某个模型时优先用它那一行的 VK；行内没有、或
+  catalog 还没拉到（仍在内置兜底模型）时才回退到上面 `auth.json` 的账号 VK。
 
 没登录过的话，插件仍会注册但不能用——请先确认某处 `session.json` 里存在 `accessToken`，
 或直接跑 `node e2e.mjs` 看它报什么。
@@ -128,11 +131,16 @@ OpenAI 兼容协议，不包一层 provider SDK，因此**没有任何第三方�
 - **catalog 去重**：网关的 `builtinModels` 与 `personalModels` 两列会重叠
   （实测 10 行仅 7 个唯一 id），而 DSH 对重复 id 直接报 `INVALID_CATALOG`，
   故按「personal 优先」去重
+- **VK 按模型取**：catalog 每行自带该模型的 `apiKey`，builtin 行与账号级 VK 不同；
+  请求时优先用该行 VK，缺失（或还在兜底目录）才回退 `auth.json` 的账号 VK
 - **多轮保真**：assistant 历史里的 `reasoning_content` 会回传给网关，
   工具调用以 `tool_calls` / `tool_call_id` 往返（已实测）
 - **失败分类**：映射到 DSH 的错误体系（`AUTH` / `RATE_LIMIT` / `SERVER` /
   `QUOTA` / `CONTEXT_WINDOW_EXCEEDED` / `TIMEOUT` / `TRANSPORT` 等），
   并按 `Retry-After` 回填 `providerRetryAfterMs`
+- **403 不一律当凭据问题**：网关对「模型不在你的名册」和「凭据失效」都回 403，
+  只有正文把拒绝挂到某个模型上（如 `Model … not allowed`）才判 `MODEL_UNSUPPORTED`，
+  其余 403 仍判 `AUTH`——否则用户会为拼错的模型名去重登 CANNWork
 
 ---
 
@@ -215,7 +223,8 @@ DSH 宿主按 `engines.dsh` 与 `peerDependencies` 里的 `@deepseek-ai/dsh*` �
 | 凭据 | 读取位置 | 发送到 |
 |---|---|---|
 | JWT（`accessToken`） | `~/.local/share/opencode/session.json` | `baseURL` 与 `modelsURL` |
-| VK（`cannbot.key`） | `~/.local/share/opencode/auth.json` | 仅 `baseURL` |
+| VK（`cannbot.key`，兜底） | `~/.local/share/opencode/auth.json` | 仅 `baseURL` |
+| VK（逐模型 `apiKey`，优先） | `modelsURL` 返回的对应模型行 | 仅 `baseURL` |
 
 **这两个端点由配置决定**。默认值就是 CANNBOT 官方网关；如果你把 `baseURL` /
 `modelsURL` 改到别处，凭据就会发到别处——这一点与所有可配置端点的 provider 相同。
@@ -240,24 +249,27 @@ DSH 宿主按 `engines.dsh` 与 `peerDependencies` 里的 `@deepseek-ai/dsh*` �
 npm test        # 离线，不需要 CANNBOT 登录
 ```
 
-覆盖两组：① 明文端点被拒、回环例外、重定向不外传凭据（断言重定向目标**从未被访问**）、
+覆盖三组：① 明文端点被拒、回环例外、重定向不外传凭据（断言重定向目标**从未被访问**）、
 失败文本已脱敏；② 适配器的 usage 映射——网关的 `prompt_tokens` 含缓存命中，而内核的
 `inputTokens` 只算未命中，命中数必须减出去（否则会话里「缓存命中」的分母会重复计数，
 永远不超过 50%）。第②组用 mock SSE 上游覆盖 `prompt_tokens_details.cached_tokens`、
 DeepSeek 拼写的 `prompt_cache_hit_tokens`、无缓存字段、命中为 0、`cached > prompt`
-五种 wire 形状，并断言 `input + cacheRead + output === total` 与复算后的命中率。
-全部通过输出：
+五种 wire 形状，并断言 `input + cacheRead + output === total` 与复算后的命中率；
+③ 凭据选择与 403 分类——catalog 每行 `apiKey` 被保留且请求优先使用、无 key 行与兜底
+目录回退账号 VK、401 与普通 403 判 `AUTH`、正文点名模型的 403 判 `MODEL_UNSUPPORTED`，
+且回显的 VK 在错误信息中被脱敏。三个脚本全部通过时输出形如：
 
 ```
-ok   plain-http baseURL is refused
-ok   plain-http modelsURL is refused
-ok   a malformed endpoint is refused
-ok   loopback http is allowed (local mock/proxy)
-ok   a redirecting endpoint fails the request instead of following it
-ok   the redirect target was never contacted (credentials stayed put)
 ok   credential material is redacted out of provider failure text
 
 PASS: credential-handling checks hold.
+ok   cached > prompt: inputTokens clamps at zero = 0
+
+PASS: wire usage is mapped to disjoint harness counts.
+ok   401: code stays AUTH = "AUTH"
+ok   403 model refusal: echoed VK is redacted = false
+
+PASS: credential selection and 403 classification hold.
 ```
 
 ### 9.4 仓库本身的卫生
