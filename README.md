@@ -20,6 +20,10 @@ CANNBOT 网关要求**两个凭据同时具备**（实测，缺一即 401）：
 而这两个凭据平时只由 **CANNWork**（`cannbot-toolkit` 扩展）维护。本插件做的事情就是：
 在 DSH 的请求里自动带上它们，让 CANNWork 里能用的模型在 DSH 里也能直接用。
 
+此外，插件**支持图片输入**：网关的 OpenAI 兼容端接受 `image_url` 内容块，插件按每个模型
+实测的多模态能力声明 `text` / `text+image`，把 DSH 的图片附件转成 `data:` URL 发出去；
+文本模型仍由前端准确拒绝（详见 §5.2 与 §8.1）。
+
 ---
 
 ## 2. 前置条件
@@ -73,15 +77,23 @@ dsh plugin --profile desktop add file:$(pwd)/dsh-cannbot-connect
 
 ## 4. 验证
 
-验证脚本需要几个开发期依赖（宿主内核包，仅测试用）：
+离线回归不需要网络，也不需要 CANNWork 登录（自带 mock 网关与断言）：
 
 ```bash
 npm install
+npm test        # 四组：security / usage / auth / image
+```
+
+与真实网关的端到端验证需要 CANNWork 已登录：
+
+```bash
 node e2e.mjs
 ```
 
-它会用真实的 `LlmRuntime` 注册插件，然后依次验证：模型列表、模型元信息、
-一次文本+推理回合、**一次工具调用**、以及**工具结果的多轮回放**。成功输出：
+它会用真实的 `LlmRuntime` 注册插件，然后依次验证：模型列表与多模态声明、模型元信息、
+一次文本+推理回合、**一次工具调用**、**工具结果的多轮回放**，以及**两次真实的图片回合**
+（用户消息里的图片 + 工具结果里的图片；附件服务换成内存假实现，图片以真实 PNG 字节发到网关）。
+成功输出形如：
 
 ```
 jwt: present
@@ -89,13 +101,20 @@ vk : present
 [info] dsh-cannbot-connect: 7 models available
 models: 7 -> deepseek-v4.1-flash, qwen3.8-max, qwen3.8-flash,
              glm-5.3, glm-5.3-flash, deepseek-v4-flash, deepseek-v4-pro
-resolve deepseek-v4.1-flash: context=1048576 efforts=minimal/low/medium/high/max/xhigh input=text
-plain: finish={"kind":"stop"} text="PONG" reasoning=55ch
+resolve deepseek-v4.1-flash: context=1048576 efforts=minimal/low/medium/high/max/xhigh input=text+image
+ok   vision model: deepseek-v4.1-flash advertises text+image
+ok   text-only model: glm-5.3 resolves without image
+plain: finish={"kind":"stop"} text="PONG" reasoning=30ch
 ok   text turn returned the expected reply
 ok   usage is disjoint (in=36 cacheRead=0 out=11 total=47)
 tool : finish={"kind":"tool-calls"} calls=get_weather({"city": "Beijing"})
 ok   tool call assembled (get_weather city=Beijing, id=call_00_...)
 ok   tool result replayed into a final answer
+image: finish={"kind":"stop"} text="Blue"
+ok   image bytes reached the model through the live gateway
+ok   image turn bills visual tokens (plain=36 image=273)
+tool-image: finish={"kind":"stop"} text="Screenshot captured. The page…"
+ok   tool-result image bytes reached the model in the tool message
 
 PASS: CANNBOT is reachable through the DSH LLM seam.
 ```
@@ -104,6 +123,7 @@ PASS: CANNBOT is reachable through the DSH LLM seam.
 
 - `jwt: MISSING` → 没登录过 CANNWork
 - `the live catalog did not load` → JWT 过期，重开 CANNWork 再试
+- `no catalog model advertises image input` → 目录或 `visionModels` 配置不对，先跑 §8.1 的探测脚本
 
 ---
 
@@ -141,6 +161,22 @@ OpenAI 兼容协议，不包一层 provider SDK，因此**没有任何第三方�
 - **403 不一律当凭据问题**：网关对「模型不在你的名册」和「凭据失效」都回 403，
   只有正文把拒绝挂到某个模型上（如 `Model … not allowed`）才判 `MODEL_UNSUPPORTED`，
   其余 403 仍判 `AUTH`——否则用户会为拼错的模型名去重登 CANNWork
+- **多模态（图片）**：`inputModalities` 按模型声明——命中 `visionModels` 的模型报
+  `['text','image']`，其余报 `['text']`。图片走 DSH 的附件服务：适配器在请求前用
+  `attachments.readImageRequest(ref, target)` 取“请求版本”字节（默认等比缩到
+  4,194,304 像素 / 1MiB 内，不放大），再序列化成 OpenAI 视觉内容块：
+  先是可读的 handle 文本（图片名、请求尺寸、只读副本路径，模型可用工具自己读取），
+  紧接 `{"type":"image_url","image_url":{"url":"data:<media>/base64,…"}}`。
+  只要消息里没有图片，`content` 仍是字符串，**纯文本 wire 与旧版完全一致**
+- **超限自动降级**：单请求累计 base64 图片默认封顶 8MiB（实测网关体限在 12–16MB 之间），
+  超出时抛 `IMAGE_OFFLOAD_REQUIRED`（带 `offloadImages` 计数），由 DSH 的
+  `dsh-compaction-image-offload` 把最旧的图片换成占位文本并重试；`offloaded` 的图片
+  永远只发占位文本，不会读字节
+- **图片失败的分类**：网关了拒绝图片时回 400（正文含 `image_url` / `image format` /
+  `image length and width` 等字样），判 `UNSUPPORTED_CONTENT` 并给出可操作建议；
+  413（请求体超限）判 `INVALID_REQUEST` 并点名图片预算配置项。二者都不会被误报成登录问题
+- **附件服务是懒依赖**：`ctx.get('attachments')` 在请求路径上解析，插件在没有附件服务的
+  部署里照样挂载；真收到图片时才给明确拒绝
 
 ---
 
@@ -181,13 +217,47 @@ OpenAI 兼容协议，不包一层 provider SDK，因此**没有任何第三方�
   config:
     baseURL: https://cannbot.hicann.cn/gateway/compatible-mode/v1
     streamIdleTimeoutMs: 300000
+    # 图片：哪些 catalog 模型声明为可收图（默认是实测白名单，见 §8.1）
+    visionModels:
+      - deepseek-v4.1-flash
+      - qwen3.8-max
+      - qwen3.8-flash
+      - glm-5.3-flash
+    # 单图投影：像素上限与编码字节上限（等比缩小，不放大）
+    requestImagePixelBudget: 4194304
+    requestImageMaxBytes: 1048576
+    # 单请求累计 base64 图片上限；超出触发图片降级重试
+    maxRequestImageBytes: 8388608
 ```
+
+`visionModels: []` 即完全回到文本模式（前端会以「模型不支持图片输入」拒绝附件）。
+所有字段都有默认值，不写 `config` 也能工作。
 
 ---
 
 ## 8. 已知限制
 
-- **文本输入**：本路由对外只声明 `text`。图片/文件块会被明确拒绝，而不是发出去后被网关打回
+- **图片输入按模型白名单**：网关不披露多模态能力，`visionModels` 是实测结果（见 §8.1）。
+  名单外模型一律只声明 `text`，前端会直接拒绝附件；新增视觉模型需跑探测脚本后写进配置
+  （或等插件发版更新默认名单）。
+- **`deepseek-v4-flash` 带图会挂起**：同模型纯文本请求约 1–2s 返回，带图请求多数时候 30s+ 无响应
+  （偶尔能成功并正确读出颜色），所以不列入白名单；若手动加入，会在 `streamIdleTimeoutMs`
+  （默认 300s）后报 `TIMEOUT`。
+- **`glm-5.3` 的图片通道不可用**：它带图时也返回 200 并计入图片 token，但会告诉用户
+  “base64 数据被截断、无法查看图片”；只有 `glm-5.3-flash` 能正常读图。这类“看似支持、
+  实则看不到图”的情况是白名单必须实测而不是按模型家族推断的原因。
+- **视觉 token 不做路由侧定价**：同一张 768² 图实测各模型计入的 prompt token 差异极大
+  （`glm-5.3-flash`≈737、`qwen3.8-max`≈540、`deepseek-v4.1-flash`≈351、`glm-5.3`≈38 且它
+  根本读不到图），统一公式只会算错，故不实现 `imageRequestPricing`：宿主先用启发式估算，
+  请求完成后以网关返回的 usage 为准（上游 `dsh-llm-pi-ai` 同样不实现）。副作用是
+  `dsh-spill-policy` 无法为含图工具结果算 token（与 pi-ai 一致），图片不会被它的
+  `maxInlineTokens` 裁剪。
+- **请求体上限**：实测 12MB 的请求体能通过解析（随后被图片校验 400 拒绝），16MB 直接回 413。图片总预算默认 8MiB，超限自动降级；
+  若会话文本/工具 schema 本身极大仍可能撞 413（分类为 `INVALID_REQUEST` 并提示调小预算）。
+- **图片格式与尺寸**：png/jpeg/webp/gif 均可（实测 `qwen3.8-flash`）；边长 ≤10px 会被网关
+  400 拒绝，adapter 分类为 `UNSUPPORTED_CONTENT`。
+- **历史图片每轮重传**：OpenAI 兼容协议没有 file id / 对象存储，多轮会话里历史图片会随每次
+  请求重发，这是协议固有成本；单请求预算与自动降级负责兜底。
 - **不支持 `off` 档位**：网关对 `reasoning_effort=off` 返回 400 `InvalidParameter`，
   故只提供 `minimal/low/medium/high/max/xhigh`；不指定档位即用 provider 默认
 - **强依赖 CANNWork 登录**：JWT 24h 过期，靠 CANNWork 自动续期；DSH 侧只读，
@@ -195,6 +265,29 @@ OpenAI 兼容协议，不包一层 provider SDK，因此**没有任何第三方�
 - **`auth.json` 是 opencode 的密钥库**：读不到时按「未配置」降级，不抛错
 - **模型按账号可见性返回**：换账号后重新请求即反映新 roster（无需重启）
 - **内核版本敏感**：`LlmAdapter` 契约在 DSH 版本间可能变化，升级内核后请重跑 `node e2e.mjs`
+
+### 8.1 图片能力实测与更新（2026-11-17）
+
+`GET /cannbot/api/models/personal` 只给 `title / model / apiKey / contextLength /
+completionOptions / roles`，**不含模态字段**，所以能力只能实测。探测脚本复用插件自己的
+凭据读取与 catalog 逻辑：
+
+```bash
+node scripts/probe-vision.mjs                 # 退出码 0=全部有结论，1=环境问题，2=有模型超时或无法判定
+node scripts/probe-vision.mjs --timeout-ms 40000
+```
+
+它对每个 catalog 模型各发一张 64×64 纯色 PNG（蓝、红各一次），两次都必须说出正确颜色才算
+视觉——因为 200 和 token 计数本身都不能证明模型真的看到了图：
+
+| 模型 | 实测结果 | 结论 |
+|---|---|---|
+| `deepseek-v4.1-flash`、`qwen3.8-max`、`qwen3.8-flash`、`glm-5.3-flash` | 蓝→`Blue`、红→`Red` | 视觉 |
+| `glm-5.3` | 200 且计入图片 token，但称 base64 被截断、读不出颜色 | 文本 |
+| `deepseek-v4-pro` | 400 `Invalid content type. image_url is only supported by certain models`（偶尔长时间无响应） | 文本 |
+| `deepseek-v4-flash` | 多数带图请求超时；偶发一次成功读出颜色 | 不声明（挂起风险） |
+
+网关模型变化后重跑脚本，把输出的 `visionModels:` 数组粘进 §7 的配置即可，无需改代码。
 
 ### 兼容性声明与判定规则
 
@@ -249,7 +342,7 @@ DSH 宿主按 `engines.dsh` 与 `peerDependencies` 里的 `@deepseek-ai/dsh*` �
 npm test        # 离线，不需要 CANNBOT 登录
 ```
 
-覆盖三组：① 明文端点被拒、回环例外、重定向不外传凭据（断言重定向目标**从未被访问**）、
+覆盖四组：① 明文端点被拒、回环例外、重定向不外传凭据（断言重定向目标**从未被访问**）、
 失败文本已脱敏；② 适配器的 usage 映射——网关的 `prompt_tokens` 含缓存命中，而内核的
 `inputTokens` 只算未命中，命中数必须减出去（否则会话里「缓存命中」的分母会重复计数，
 永远不超过 50%）。第②组用 mock SSE 上游覆盖 `prompt_tokens_details.cached_tokens`、
@@ -257,7 +350,11 @@ DeepSeek 拼写的 `prompt_cache_hit_tokens`、无缓存字段、命中为 0、`
 五种 wire 形状，并断言 `input + cacheRead + output === total` 与复算后的命中率；
 ③ 凭据选择与 403 分类——catalog 每行 `apiKey` 被保留且请求优先使用、无 key 行与兜底
 目录回退账号 VK、401 与普通 403 判 `AUTH`、正文点名模型的 403 判 `MODEL_UNSUPPORTED`，
-且回显的 VK 在错误信息中被脱敏。三个脚本全部通过时输出形如：
+且回显的 VK 在错误信息中被脱敏；④ 图片输入——视觉/文本模型的模态声明、图片
+`image_url` data URL 与 handle 文本序列化、纯文本 wire 的冻结消息 golden、同一附件只读一次
+但每次出现都序列化、`offloaded` 图片零字节读取、工具消息图片、缺失附件服务与未声明模型的
+拒绝、超预算抛 `IMAGE_OFFLOAD_REQUIRED`（精确计数与 base64 口径）、取消/看门狗超时与
+附件解析错误的分类、网关 400 图片拒绝与 413 体限的分类。四个脚本全部通过时输出形如：
 
 ```
 ok   credential material is redacted out of provider failure text
@@ -270,6 +367,10 @@ ok   401: code stays AUTH = "AUTH"
 ok   403 model refusal: echoed VK is redacted = false
 
 PASS: credential selection and 403 classification hold.
+ok   image part is an OpenAI vision data URL = {"type":"image_url",...}
+ok   over-budget request fails with IMAGE_OFFLOAD_REQUIRED = "IMAGE_OFFLOAD_REQUIRED"
+
+PASS: image input advertisement, serialization, and refusals hold.
 ```
 
 ### 9.4 仓库本身的卫生

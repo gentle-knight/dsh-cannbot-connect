@@ -1,7 +1,8 @@
 /**
  * End-to-end check: registers the plugin through the real DSH `LlmRuntime` and
  * exercises the live CANNBOT gateway through the harness seam — catalog, model
- * resolution, a text+reasoning turn, a tool call, and a multi-turn tool result.
+ * resolution, a text+reasoning turn, a tool call, a multi-turn tool result, and
+ * an image turn carried as a real attachment reference.
  *
  * Requires (see README § 3):
  *   1. `npm install`
@@ -65,10 +66,55 @@ console.log(
 if (info.context?.contextWindow === undefined) fail('resolveModelInfo returned no context window')
 if ((info.reasoning?.efforts ?? []).length === 0) fail('resolveModelInfo advertised no reasoning efforts')
 
+// Modality advertisement decides whether the harness admits an image at all
+// (and whether it substitutes the text-only placeholder), so check both
+// directions against the live catalog.
+const visionTarget = models.find((m) => (m.inputModalities ?? []).includes('image'))
+const textOnlyTarget = models.find(
+  (m) => m.inputModalities !== undefined && !m.inputModalities.includes('image'),
+)
+if (visionTarget === undefined) fail('no catalog model advertises image input')
+else ok(`vision model: ${visionTarget.id} advertises ${visionTarget.inputModalities.join('+')}`)
+if (textOnlyTarget === undefined) fail('no catalog model advertises text-only input')
+else {
+  const textInfo = await ctx.llm.resolveModelInfo(plugin.PROVIDER, textOnlyTarget.id)
+  if ((textInfo.inputModalities ?? []).includes('image')) fail(`${textOnlyTarget.id} resolves as image-capable`)
+  else ok(`text-only model: ${textOnlyTarget.id} resolves without image`)
+}
+
+/**
+ * A 64x64 solid blue PNG. The image turn asserts the model names the colour, so
+ * the bytes must really reach the gateway — a placeholder substitution could not
+ * produce it.
+ */
+const BLUE_PNG_BASE64 =
+  'iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAn0lEQVRoge2SQQkAQRDDqqTCTnvErIh7hIFCBKSh6cdpoht0A9ArdhfiLtENugHoFbsLcZfoBt0A9IrdhbhLdINuAHrF7kLcJbpBNwC9Ynch7hLdoBuAXrG7EHeJbtANQK/YXYi7RDfoBqBX7C7EXaIbdAPQK3YX4i7RDboB6BW7C3GX6AbdAPSK3YW4S3SDbgB6xe5C3CW6QTcAveIfHlsmQTwiFSCUAAAAAElFTkSuQmCC'
+
+// Production mounts a durable attachment store; this script only needs the
+// request-version bytes the adapter asks for, so provide the minimum surface.
+const imageBytes = Buffer.from(BLUE_PNG_BASE64, 'base64')
+ctx.provide('attachments', {
+  imageHostPath: () => undefined,
+  async readImageRequest(ref) {
+    return {
+      variantId: 'variant-e2e',
+      attachment: ref,
+      data: imageBytes,
+      mediaType: ref.mediaType,
+      bytes: imageBytes.length,
+      width: ref.width,
+      height: ref.height,
+      depth: 'uchar',
+      space: 'srgb',
+      hasAlpha: false,
+    }
+  },
+})
+
 /** Stream one call and return the assembled chunks plus the terminal reason. */
-async function stream(options) {
+async function stream(options, model = target.id) {
   const chunks = []
-  for await (const chunk of ctx.llm.stream({ provider: plugin.PROVIDER, model: target.id, ...options })) {
+  for await (const chunk of ctx.llm.stream({ provider: plugin.PROVIDER, model, ...options })) {
     chunks.push(chunk)
   }
   const text = chunks.filter((c) => c.type === 'text-delta').map((c) => c.text).join('')
@@ -77,6 +123,12 @@ async function stream(options) {
     .filter((c) => c.type === 'block-end' && c.block.type === 'tool-call')
     .map((c) => c.block)
   return { chunks, text, reasoning, toolCalls, finish: chunks.find((c) => c.type === 'finish') }
+}
+
+/** Provider prompt tokens of one turn, from its usage chunk. */
+const promptTokensOf = (turn) => {
+  const usage = turn.chunks.find((c) => c.type === 'usage')?.usage
+  return usage === undefined ? undefined : usage.inputTokens + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0)
 }
 
 const userMessage = (text) => ({
@@ -178,6 +230,87 @@ if (toolTurn.toolCalls.length > 0) {
   } else if (followUp.text.trim() === '') {
     fail('tool-result replay produced no text')
   } else ok('tool result replayed into a final answer')
+}
+
+// ── image turn ───────────────────────────────────────────────────────────────
+if (visionTarget !== undefined) {
+  const imageRef = {
+    attachmentId: 'att_e2e_blue',
+    mediaType: 'image/png',
+    bytes: imageBytes.length,
+    width: 64,
+    height: 64,
+    name: 'e2e-blue.png',
+  }
+  const imageTurn = await stream(
+    {
+      messages: [
+        {
+          id: 'msg_e2e_image',
+          role: 'user',
+          content: [
+            { type: 'text', text: 'What is the dominant colour of this image? Answer with one word.' },
+            { type: 'image', attachment: imageRef },
+          ],
+          source: { kind: 'user' },
+        },
+      ],
+    },
+    visionTarget.id,
+  )
+  console.log(`image: finish=${JSON.stringify(imageTurn.finish?.reason)} text=${JSON.stringify(imageTurn.text.slice(0, 80))}`)
+  if (imageTurn.finish?.reason?.kind !== 'stop') fail(`image turn did not stop cleanly: ${JSON.stringify(imageTurn.finish?.reason)}`)
+  else if (!/blue/i.test(`${imageTurn.text} ${imageTurn.reasoning}`)) {
+    fail(`the model did not identify the image colour: ${JSON.stringify(imageTurn.text.slice(0, 160))}`)
+  } else ok('image bytes reached the model through the live gateway')
+
+  const plainPrompt = promptTokensOf(plain)
+  const imagePrompt = promptTokensOf(imageTurn)
+  if (plainPrompt === undefined || imagePrompt === undefined) fail('image turn produced no usage chunk')
+  else if (!(imagePrompt > plainPrompt)) {
+    fail(`image turn did not bill extra prompt tokens (plain=${plainPrompt} image=${imagePrompt})`)
+  } else ok(`image turn bills visual tokens (plain=${plainPrompt} image=${imagePrompt})`)
+
+  // A screenshot tool result carries an image in tool content, which the
+  // adapter sends as a tool message whose content is a part array. Verify the
+  // gateway really reads that shape instead of trusting the schema assumption.
+  const toolImageTurn = await stream(
+    {
+      messages: [
+        {
+          id: 'msg_e2e_tool_image_user',
+          role: 'user',
+          content: [{ type: 'text', text: 'Take a screenshot of the page.' }],
+          source: { kind: 'user' },
+        },
+        {
+          id: 'msg_e2e_tool_image_assistant',
+          role: 'assistant',
+          content: [{ type: 'tool-call', id: 'call_e2e_shot', name: 'screenshot', arguments: '{}' }],
+          source: { kind: 'model', provider: plugin.PROVIDER, model: visionTarget.id },
+        },
+        {
+          id: 'msg_e2e_tool_image_result',
+          role: 'tool',
+          toolCallId: 'call_e2e_shot',
+          content: [
+            { type: 'text', text: 'Screenshot result:' },
+            { type: 'image', attachment: imageRef },
+          ],
+          source: { kind: 'tool', callId: 'call_e2e_shot', name: 'screenshot' },
+        },
+      ],
+    },
+    visionTarget.id,
+  )
+  console.log(
+    `tool-image: finish=${JSON.stringify(toolImageTurn.finish?.reason)} text=${JSON.stringify(toolImageTurn.text.slice(0, 80))}`,
+  )
+  if (toolImageTurn.finish?.reason?.kind !== 'stop') {
+    fail(`tool-result image turn did not stop cleanly: ${JSON.stringify(toolImageTurn.finish?.reason)}`)
+  } else if (!/blue/i.test(`${toolImageTurn.text} ${toolImageTurn.reasoning}`)) {
+    fail(`the model did not read the tool-result image: ${JSON.stringify(toolImageTurn.text.slice(0, 160))}`)
+  } else ok('tool-result image bytes reached the model in the tool message')
 }
 
 release()
