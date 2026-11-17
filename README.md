@@ -89,7 +89,7 @@ models: 7 -> deepseek-v4.1-flash, qwen3.8-max, qwen3.8-flash,
 resolve deepseek-v4.1-flash: context=1048576 efforts=minimal/low/medium/high/max/xhigh input=text
 plain: finish={"kind":"stop"} text="PONG" reasoning=55ch
 ok   text turn returned the expected reply
-ok   usage reported (in=36 out=17)
+ok   usage is disjoint (in=36 cacheRead=0 out=11 total=47)
 tool : finish={"kind":"tool-calls"} calls=get_weather({"city": "Beijing"})
 ok   tool call assembled (get_weather city=Beijing, id=call_00_...)
 ok   tool result replayed into a final answer
@@ -240,8 +240,13 @@ DSH 宿主按 `engines.dsh` 与 `peerDependencies` 里的 `@deepseek-ai/dsh*` �
 npm test        # 离线，不需要 CANNBOT 登录
 ```
 
-覆盖：明文端点被拒、回环例外、重定向不外传凭据（断言重定向目标**从未被访问**）、
-失败文本已脱敏。全部通过输出：
+覆盖两组：① 明文端点被拒、回环例外、重定向不外传凭据（断言重定向目标**从未被访问**）、
+失败文本已脱敏；② 适配器的 usage 映射——网关的 `prompt_tokens` 含缓存命中，而内核的
+`inputTokens` 只算未命中，命中数必须减出去（否则会话里「缓存命中」的分母会重复计数，
+永远不超过 50%）。第②组用 mock SSE 上游覆盖 `prompt_tokens_details.cached_tokens`、
+DeepSeek 拼写的 `prompt_cache_hit_tokens`、无缓存字段、命中为 0、`cached > prompt`
+五种 wire 形状，并断言 `input + cacheRead + output === total` 与复算后的命中率。
+全部通过输出：
 
 ```
 ok   plain-http baseURL is refused

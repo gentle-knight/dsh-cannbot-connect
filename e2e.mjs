@@ -95,9 +95,22 @@ else ok('text turn returned the expected reply')
 
 const usageChunk = plain.chunks.find((c) => c.type === 'usage')
 if (usageChunk === undefined) fail('no usage chunk was emitted')
-else if (!(usageChunk.usage.inputTokens > 0 && usageChunk.usage.outputTokens > 0)) {
-  fail(`usage looks wrong: ${JSON.stringify(usageChunk.usage)}`)
-} else ok(`usage reported (in=${usageChunk.usage.inputTokens} out=${usageChunk.usage.outputTokens})`)
+else {
+  const usage = usageChunk.usage
+  const billed = usage.inputTokens + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0)
+  if (!(billed > 0 && usage.outputTokens > 0)) {
+    fail(`usage looks wrong: ${JSON.stringify(usage)}`)
+  } else if (usage.totalTokens !== undefined && billed + usage.outputTokens !== usage.totalTokens) {
+    // The harness contract counts are DISJOINT, so the three prompt-side
+    // buckets plus output must add up to the provider's own aggregate total.
+    fail(`usage buckets are not disjoint with the provider total: ${JSON.stringify(usage)}`)
+  } else {
+    ok(
+      `usage is disjoint (in=${usage.inputTokens} cacheRead=${usage.cacheReadTokens ?? 0} ` +
+        `out=${usage.outputTokens} total=${usage.totalTokens ?? 'n/a'})`,
+    )
+  }
+}
 
 // ── tool call ────────────────────────────────────────────────────────────────
 const weatherTool = {

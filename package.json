@@ -1,6 +1,6 @@
 {
   "name": "dsh-cannbot-connect",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "description": "Bring CANNBOT gateway models into DeepSeek Harness by reusing CANNWork's opencode sign-in (VK + JWT).",
   "type": "module",
@@ -25,7 +25,7 @@
     "dsh": ">=0.2.1-rc.2 <0.3.0"
   },
   "scripts": {
-    "test": "node test/security.mjs",
+    "test": "node test/security.mjs && node test/adapter-usage.mjs",
     "test:e2e": "node e2e.mjs"
   },
   "devDependencies": {
