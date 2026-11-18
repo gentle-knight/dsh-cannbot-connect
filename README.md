@@ -222,8 +222,14 @@ npm run install:tunnel -- --uninstall  # 停掉并移除
 
 - `<alias>` 就是 VS Code 远程窗口 remote authority 里 `ssh-remote+` 后面那一段。
 - 装完后在**远端**终端验证：`curl -s http://127.0.0.1:8788/healthz` 应返回模型清单。
-- 隧道进程由 LaunchAgent 看护：ssh 断开/网络变化后 30 秒自动重连；`ssh -R` 只绑**远端
-  回环**（`GatewayPorts no` 的默认行为），不会暴露给远端所在网段。
+- 隧道进程由 LaunchAgent 看护，实际执行 `scripts/tunnel-supervisor.sh`：ssh 断开/网络
+  变化后 10 秒重试；`ssh -R` 只绑**远端回环**（`GatewayPorts no` 的默认行为），不会暴露
+  给远端所在网段。
+- **自动清理残留转发**：Mac 休眠/断网后，远端 sshd 可能继续占着 8788 却不再转发，表现为
+  反复 `remote port forwarding failed`。supervisor 在重试前会请求远端 `/healthz`；只有
+  它无响应、且占用者是无 TTY 的 `sshd` 时，才用 `sudo -n` 杀掉这个陈旧会话并重连。
+  健康的隧道和非 sshd 的监听者不会被碰。远端需要**免密 sudo**；没有时日志会提示，仍需手动
+  `sudo netstat -ltnp | grep :8788` + `sudo kill <pid>`。
 - 换了 devspace（主机别名变了）或同时开多个远程窗口：重新跑一次
   `npm run install:tunnel`，或 `--host A --host B` 一次加多个。
 - 日志：`~/Library/Logs/dsh-cannbot-connect-tunnel.log`。

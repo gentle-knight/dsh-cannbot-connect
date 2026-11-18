@@ -17,13 +17,31 @@
  * The forward is exposed on the remote's loopback only (sshd's default
  * `GatewayPorts no`), so it is not reachable from the dev host's network.
  *
+ * The installed LaunchAgent runs `tunnel-supervisor.sh`: after the client dies
+ * without closing its TCP connection (Mac sleep, network change), the remote
+ * sshd can keep the forwarded port without forwarding anything. The supervisor
+ * checks the remote `/healthz`, clears that stale TTY-less sshd when it has
+ * passwordless sudo, and retries, instead of looping on "remote port forwarding
+ * failed" until the user kills it by hand.
+ *
  * @module dsh-cannbot-connect/install-remote-tunnel
  */
 
 import { execFileSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 /** LaunchAgent label of the tunnel job. */
 const LABEL = 'com.dsh-cannbot-connect.remote-tunnel'
@@ -131,11 +149,6 @@ function candidateHosts() {
   return hosts
 }
 
-/** Quote a value for a POSIX shell single-quoted string. */
-function shellQuote(value) {
-  return `'${String(value).replace(/'/g, `'\\''`)}'`
-}
-
 /** Escape a value for XML text/attribute context. */
 function escapeXml(value) {
   return String(value)
@@ -154,6 +167,21 @@ function plistPath() {
 /** Where the tunnel's ssh output lands. */
 function logPath() {
   return join(homedir(), 'Library', 'Logs', 'dsh-cannbot-connect-tunnel.log')
+}
+
+/**
+ * The self-healing supervisor installed for launchd.
+ *
+ * It lives outside the repository so moving or deleting the checkout does not
+ * break the LaunchAgent; every install refreshes it from {@link supervisorSource}.
+ */
+function supervisorPath() {
+  return join(homedir(), '.dsh', 'bin', 'dsh-cannbot-connect-tunnel.sh')
+}
+
+/** The supervisor shipped next to this installer. */
+function supervisorSource() {
+  return join(dirname(fileURLToPath(import.meta.url)), 'tunnel-supervisor.sh')
 }
 
 /** Run launchctl, reporting failures instead of throwing. */
@@ -177,44 +205,11 @@ function bootout() {
   if (isLoaded()) launchctl(['bootout', `gui/${process.getuid()}/${LABEL}`])
 }
 
-/**
- * One shell command that keeps a reverse tunnel per host alive.
- *
- * `ExitOnForwardFailure` makes ssh exit when the remote port is taken (someone
- * else's tunnel), so the retry loop logs it instead of a half-working state.
- * `BatchMode` keeps launchd from ever waiting on a password prompt.
- */
-function tunnelCommand(hosts, port) {
-  const sshArgs = [
-    '/usr/bin/ssh',
-    '-N',
-    '-o',
-    'BatchMode=yes',
-    '-o',
-    'ExitOnForwardFailure=yes',
-    '-o',
-    'ConnectTimeout=15',
-    '-o',
-    'ServerAliveInterval=30',
-    '-o',
-    'ServerAliveCountMax=3',
-    '-o',
-    'StrictHostKeyChecking=accept-new',
-    '-R',
-    `127.0.0.1:${port}:127.0.0.1:${port}`,
-  ]
-  return hosts
-    .map(
-      (host) =>
-        `while :; do ${sshArgs.map(shellQuote).join(' ')} ${shellQuote(host)}; ` +
-        `echo "tunnel to ${host} exited, retrying in 30s"; sleep 30; done`,
-    )
-    .join(' & ')
-    .concat(' & wait')
-}
-
 /** Render the LaunchAgent plist. */
-function plistXml({ hosts, port }) {
+function plistXml({ hosts, port, supervisor }) {
+  const args = ['/bin/sh', supervisor, String(port), ...hosts]
+    .map((value) => `    <string>${escapeXml(value)}</string>`)
+    .join('\n')
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -223,9 +218,7 @@ function plistXml({ hosts, port }) {
   <string>${LABEL}</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/bin/sh</string>
-    <string>-c</string>
-    <string>${escapeXml(tunnelCommand(hosts, port))}</string>
+${args}
   </array>
   <key>RunAtLoad</key>
   <true/>
@@ -260,8 +253,12 @@ function main() {
                    window's remote authority.
   --port <n>       local service port to forward (default ${DEFAULT_PORT})
   --list           print candidate dev-host aliases from the SSH config
-  --uninstall      stop the tunnel and remove its plist
+  --uninstall      stop the tunnel and remove its plist + supervisor
   --help           show this help
+
+The installed supervisor clears a stale remote forward after a client death
+(Mac sleep, network change) when passwordless sudo is available on the remote;
+it only kills a TTY-less sshd that holds this port and does not answer /healthz.
 `)
     return
   }
@@ -276,6 +273,7 @@ function main() {
   if (flags.uninstall !== undefined) {
     bootout()
     if (existsSync(plistPath())) rmSync(plistPath())
+    if (existsSync(supervisorPath())) rmSync(supervisorPath())
     process.stdout.write(`removed ${LABEL}\n`)
     return
   }
@@ -299,9 +297,14 @@ function main() {
   const port = Number(flags.port ?? DEFAULT_PORT)
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`invalid port: ${String(flags.port)}`)
 
+  const supervisor = supervisorPath()
+  mkdirSync(dirname(supervisor), { recursive: true })
+  copyFileSync(supervisorSource(), supervisor)
+  chmodSync(supervisor, 0o700)
+
   mkdirSync(dirname(plistPath()), { recursive: true })
   mkdirSync(dirname(logPath()), { recursive: true })
-  writeFileSync(plistPath(), plistXml({ hosts, port }))
+  writeFileSync(plistPath(), plistXml({ hosts, port, supervisor }))
   chmodSync(plistPath(), 0o600)
 
   bootout()
@@ -314,9 +317,10 @@ function main() {
     throw new Error(`launchctl bootstrap failed: ${result.detail}`)
   }
 
-  process.stdout.write(`installed: ${plistPath()}\n`)
-  process.stdout.write(`tunnel   : ${hosts.join(', ')} → 127.0.0.1:${port} (on the remote loopback)\n`)
-  process.stdout.write(`logs     : ${logPath()}\n`)
+  process.stdout.write(`installed : ${plistPath()}\n`)
+  process.stdout.write(`supervisor: ${supervisor}\n`)
+  process.stdout.write(`tunnel    : ${hosts.join(', ')} → 127.0.0.1:${port} (on the remote loopback)\n`)
+  process.stdout.write(`logs      : ${logPath()}\n`)
   process.stdout.write('verify   : open a terminal in the remote window and run\n')
   process.stdout.write(`           curl -s http://127.0.0.1:${port}/healthz\n`)
   process.stdout.write(`stop it  : node scripts/install-remote-tunnel.mjs --uninstall\n`)
