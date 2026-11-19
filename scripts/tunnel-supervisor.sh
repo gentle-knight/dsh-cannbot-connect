@@ -21,7 +21,7 @@ shift
   exit 2
 }
 
-SSH_OPTS="-N -o BatchMode=yes -o ExitOnForwardFailure=yes -o ConnectTimeout=15 -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=accept-new"
+SSH_OPTS="-N -o BatchMode=yes -o ExitOnForwardFailure=yes -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=accept-new"
 
 # A POSIX sh program sent to the remote host over `ssh -T host sh -s`.
 # The local port expands here; every remote-side variable is escaped.
@@ -58,8 +58,21 @@ supervise() {
     status=$?
     echo "[supervisor] $(/bin/date '+%Y-%m-%d %H:%M:%S') tunnel to $host exited ($status)" >&2
     # Keep the remote cleanup's stderr (it names the pid it cleared); drop stdout.
+    # The cleanup must never wedge the supervisor: the ssh client gets keepalives,
+    # and a watchdog kills a half-open session that never returns.
     remote_cleanup | /usr/bin/ssh -T -o BatchMode=yes -o ConnectTimeout=15 \
-      -o StrictHostKeyChecking=accept-new "$host" 'sh -s' >/dev/null
+      -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
+      -o StrictHostKeyChecking=accept-new "$host" 'sh -s' >/dev/null &
+    cleanup_pid=$!
+    (
+      /bin/sleep 20
+      echo "[supervisor] $(/bin/date '+%Y-%m-%d %H:%M:%S') remote cleanup ssh timed out; killing it" >&2
+      kill "$cleanup_pid" 2>/dev/null
+    ) >/dev/null &
+    watchdog_pid=$!
+    wait "$cleanup_pid" 2>/dev/null || true
+    kill "$watchdog_pid" 2>/dev/null
+    wait "$watchdog_pid" 2>/dev/null || true
     /bin/sleep 10
   done
 }
