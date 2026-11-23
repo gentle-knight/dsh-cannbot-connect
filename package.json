@@ -1,6 +1,6 @@
 {
   "name": "dsh-cannbot-connect",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "Bring CANNBOT gateway models into DeepSeek Harness by reusing CANNWork's opencode sign-in, with a live model roster and measured per-model image support.",
   "type": "module",
   "main": "lib/index.js",

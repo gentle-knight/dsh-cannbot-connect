@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.3
+
+- Fix image input on DSH 0.2.3: the attachment service renamed the request-image
+  target from `maxBytes` to `maxImageBytes` plus `imageTargetBytes`. The adapter
+  now returns all three names, so the same code works on 0.2.2-rc.3 and
+  0.2.3-alpha.2; on 0.2.3 the previous shape failed with
+  `Image request maxImageBytes must be a positive integer`.
+- Add regression assertions for both target shapes.
+
 ## 0.4.2
 
 - Make GitHub the canonical marketplace/install URL: `package.json`

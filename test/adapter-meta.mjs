@@ -70,7 +70,9 @@ eq('an unknown model still resolves its id', unsized.id, 'unsized-model')
 // ── imageRequestTarget ──────────────────────────────────────────────────────
 const target = adapter.imageRequestTarget('cannbot', 'vision-model', { width: 4096, height: 4096 })
 check('an oversized image is scaled inside the pixel budget', target.width * target.height <= config.requestImagePixelBudget)
-check('the target carries the encoded-byte cap', target.maxBytes === config.requestImageMaxBytes)
+check('the target carries the legacy encoded-byte cap', target.maxBytes === config.requestImageMaxBytes)
+check('the target carries the 0.2.3 encoded-byte cap', target.maxImageBytes === config.requestImageMaxBytes)
+check('the target carries the 0.2.3 preferred target', target.imageTargetBytes === config.requestImageMaxBytes)
 const small = adapter.imageRequestTarget('cannbot', 'vision-model', { width: 32, height: 16 })
 eq('a small image is not enlarged', [small.width, small.height], [32, 16])
 

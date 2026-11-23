@@ -312,7 +312,13 @@ async function main() {
             image_url: { url: `data:image/png;base64,${Buffer.from('request-bytes:att_one').toString('base64')}` },
           },
         )
-        eq('attachment read the projected target', store.calls.at(-1)?.target, { width: 64, height: 64, maxBytes: 1_048_576 })
+        eq('attachment read the projected target', store.calls.at(-1)?.target, {
+          width: 64,
+          height: 64,
+          maxBytes: 1_048_576,
+          maxImageBytes: 1_048_576,
+          imageTargetBytes: 1_048_576,
+        })
       }
 
       // ── 5. A text-only message keeps the string content shape ────────────
