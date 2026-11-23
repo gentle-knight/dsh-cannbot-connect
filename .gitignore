@@ -2,3 +2,5 @@ node_modules/
 kernel/
 *.log
 .DS_Store
+reports/
+scratch/

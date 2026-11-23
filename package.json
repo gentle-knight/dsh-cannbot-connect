@@ -1,19 +1,24 @@
 {
   "name": "dsh-cannbot-connect",
-  "version": "0.3.2",
-  "private": true,
-  "description": "Bring CANNBOT gateway models into DeepSeek Harness by reusing CANNWork's opencode sign-in (VK + JWT).",
+  "version": "0.4.0",
+  "description": "Bring CANNBOT gateway models into DeepSeek Harness by reusing CANNWork's opencode sign-in, with a live model roster and measured per-model image support.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
     ".": "./lib/index.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
   },
   "files": [
     "lib",
     "cordis.patch.yml",
-    "README.md"
+    "README.md",
+    "LICENSE",
+    "locale/*.json",
+    "icon.svg",
+    "docs"
   ],
   "dsh": {
     "bundle": {
@@ -21,11 +26,11 @@
     }
   },
   "engines": {
-    "node": "^22.19.0 || >=24.0.0",
-    "dsh": ">=0.2.1-rc.2 <0.3.0"
+    "node": ">=24.9.0",
+    "dsh": ">=0.2.2-rc.3 <0.3.0"
   },
   "scripts": {
-    "test": "node test/import-surface.mjs && node test/config.mjs && node test/manifest.mjs && node test/plugin.mjs && node test/wire.mjs && node test/errors.mjs && node test/security.mjs && node test/adapter-usage.mjs && node test/adapter-auth.mjs && node test/adapter-image.mjs",
+    "test": "node test/import-surface.mjs && node test/config.mjs && node test/manifest.mjs && node test/plugin.mjs && node test/wire.mjs && node test/errors.mjs && node test/credentials.mjs && node test/catalog.mjs && node test/adapter-meta.mjs && node test/adapter-finish.mjs && node test/security.mjs && node test/adapter-usage.mjs && node test/adapter-auth.mjs && node test/adapter-image.mjs",
     "test:compat": "node scripts/host-matrix.mjs",
     "test:e2e": "node e2e.mjs",
     "check": "npm test && node scripts/host-matrix.mjs && ./check-secrets.sh"
@@ -37,7 +42,7 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": ">=4.0.5 <5.0.0",
-    "@deepseek-ai/dsh-llm": ">=0.2.1-rc.2 <0.3.0",
+    "@deepseek-ai/dsh-llm": ">=0.2.2-rc.3 <0.3.0",
     "@deepseek-ai/schemastery": ">=3.18.5 <4.0.0"
   },
   "license": "MIT",
@@ -49,6 +54,13 @@
     "dsh-plugin",
     "deepseek-harness",
     "cannbot",
-    "model-provider"
-  ]
+    "model-provider",
+    "image-input"
+  ],
+  "displayName": "CANNBOT Connect",
+  "icon": "icon.svg",
+  "homepage": "https://gitcode.com/gentle-knight/dsh-cannbot-connect#readme",
+  "bugs": {
+    "url": "https://gitcode.com/gentle-knight/dsh-cannbot-connect/issues"
+  }
 }

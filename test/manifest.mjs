@@ -76,6 +76,11 @@ check('files includes lib', files.includes('lib'))
 check('files includes the patch', files.includes(manifest.dsh.bundle.patch.replace(/^\.\//, '')))
 check('files includes README', files.includes('README.md'))
 check('files does not include node_modules or scratch', !files.some((entry) => /node_modules|scratch|reports/.test(entry)))
+check('files includes the locale documents', files.includes('locale/*.json'))
+check('files includes the icon', files.includes('icon.svg'))
+check('files includes the detail documents', files.includes('docs'))
+check('exports exposes ./icon', manifest.exports?.['./icon'] === './icon.svg')
+check('exports exposes the locale JSON', manifest.exports?.['./locale/*.json'] === './locale/*.json')
 
 // Every declared runtime file must exist. `files` is a packaging filter, not a
 // guarantee, and a local directory install links the checkout instead of a

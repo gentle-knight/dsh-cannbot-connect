@@ -101,7 +101,7 @@ try {
       error = thrown
     }
     check('plain-http non-loopback baseURL is refused at mount', error !== undefined)
-    eq('insecure endpoint keeps a stable failure code', error?.code, 'INVALID_REQUEST')
+    eq('insecure endpoint keeps a stable failure code', error?.code, 'INVALID_CONFIG')
   }
 
   // ── loopback http is allowed for local mocks ─────────────────────────────

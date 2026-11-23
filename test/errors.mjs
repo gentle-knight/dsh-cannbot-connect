@@ -74,6 +74,13 @@ const limited = providerFailure(429, 'rate limited', '2', [])
 eq('Retry-After seconds become providerRetryAfterMs', limited.failure?.providerRetryAfterMs, 2_000)
 const noRetry = failure(429, 'rate limited')
 eq('missing Retry-After leaves the fact absent', noRetry.failure?.providerRetryAfterMs, undefined)
+const dateRetry = providerFailure(429, 'rate limited', new Date(Date.now() + 30_000).toUTCString(), [])
+check(
+  'an HTTP-date Retry-After becomes a positive delay',
+  dateRetry.failure?.providerRetryAfterMs > 0 && dateRetry.failure.providerRetryAfterMs <= 30_000,
+  dateRetry.failure?.providerRetryAfterMs,
+)
+check('an unparsable Retry-After is ignored', failure(429, 'x', 'soon').failure?.providerRetryAfterMs === undefined)
 
 // ── redaction ────────────────────────────────────────────────────────────────
 
@@ -112,7 +119,7 @@ const rejects = (label, url) => {
     assertSecureEndpoint(url, 'baseURL')
     fail(`${label}: expected a refusal`)
   } catch (error) {
-    eq(`${label}: code`, error.code, 'INVALID_REQUEST')
+    eq(`${label}: code`, error.code, 'INVALID_CONFIG')
   }
 }
 rejects('plain http to a remote host', 'http://example.test/v1')

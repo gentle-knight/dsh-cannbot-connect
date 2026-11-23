@@ -53,7 +53,7 @@ CANNBOT 网关要求**两个凭据同时具备**（实测，缺一即 401）：
 
 其他要求：
 
-- **DSH 内核 `>=0.2.1-rc.2 <0.3.0`**（同时声明在 `engines.dsh` 与 `peerDependencies`，宿主据此判定兼容性）
+- **DSH 内核 `>=0.2.2-rc.3 <0.3.0`、Node `>=24.9.0`**（宿主按 `engines.dsh` 判定兼容性；0.2.1 线不再支持）
 - **Node.js `^22.19.0 || >=24.0.0`**
 - 能访问 `cannbot.hicann.cn`
 
@@ -155,6 +155,10 @@ OpenAI 兼容协议，不包一层 provider SDK，因此**没有任何第三方�
 - **接入点**：`ctx.llm.registerAdapter(['cannbot'], adapter)`——DSH 文档化的扩展点
 - **凭据每次请求现读磁盘**，不缓存 → CANNWork 刷新令牌后，下一个 DSH 请求立刻生效，**无需重启**
 - **注册不阻塞网络**：先用内置兜底模型挂载，catalog 拉取成功后替换
+- **目录会刷新，不是只拉一次**：`catalogRefreshMs`（默认 10 分钟，`0` 关闭）后台刷新；
+  请求遇到 `AUTH` / `MODEL_UNSUPPORTED` 时触发一次短冷却重试（登录刷新或换号后名册可能已变）。
+  刷新成功同时发 `llm/adapters-updated` 与 0.2.2+ 的 `llm/models-updated('cannbot')`；
+  刷新失败保留旧目录，不会把可用的名册换成空表
 - **catalog 去重**：网关的 `builtinModels` 与 `personalModels` 两列会重叠
   （实测 10 行仅 7 个唯一 id），而 DSH 对重复 id 直接报 `INVALID_CATALOG`，
   故按「personal 优先」去重
@@ -166,9 +170,11 @@ OpenAI 兼容协议，不包一层 provider SDK，因此**没有任何第三方�
   并按宿主 `normalizeUsage` 的不变式做防护——命中数 clamp 到 prompt、`null`/字符串/负数
   不计、`reasoning_tokens` clamp 到 output、`totalTokens` 与桶不一致时用 prompt+output
   派生。宿主遇到自相矛盾的样本会**整条丢弃**，所以这里不能只保证“数字大致对”
-- **失败分类**：映射到 DSH 的错误体系（`AUTH` / `RATE_LIMIT` / `SERVER` /
-  `QUOTA` / `CONTEXT_WINDOW_EXCEEDED` / `TIMEOUT` / `TRANSPORT` 等），
-  并按 `Retry-After` 回填 `providerRetryAfterMs`
+- **失败分类**：映射到 DSH 的错误体系（`MISSING_CREDENTIAL` / `INVALID_CREDENTIAL` /
+  `AUTH` / `RATE_LIMIT` / `SERVER` / `QUOTA` / `CONTEXT_WINDOW_EXCEEDED` / `TIMEOUT` /
+  `TRANSPORT` / `MALFORMED_RESPONSE` 等），并按 `Retry-After`（秒或 HTTP-date）
+  回填 `providerRetryAfterMs`。未知的 `finish_reason`（含 `content_filter`）抛
+  `INVALID_RESPONSE`，不再伪装成干净的 stop；流内 `event.error` 保留真实 status
 - **403 不一律当凭据问题**：网关对「模型不在你的名册」和「凭据失效」都回 403，
   只有正文把拒绝挂到某个模型上（如 `Model … not allowed`）才判 `MODEL_UNSUPPORTED`，
   其余 403 仍判 `AUTH`——否则用户会为拼错的模型名去重登 CANNWork
@@ -182,12 +188,30 @@ OpenAI 兼容协议，不包一层 provider SDK，因此**没有任何第三方�
 - **超限自动降级**：单请求累计 base64 图片默认封顶 8MiB（实测网关体限在 12–16MB 之间），
   超出时抛 `IMAGE_OFFLOAD_REQUIRED`（带 `offloadImages` 计数），由 DSH 的
   `dsh-compaction-image-offload` 把最旧的图片换成占位文本并重试；`offloaded` 的图片
-  永远只发占位文本，不会读字节
+  永远只发占位文本，不会读字节。图片**计数**上限（`maxRequestImages`）默认是一个远高于
+  真实请求的占位值，因为网关没有公布计数限制；字节预算才是当前的实际约束
 - **图片失败的分类**：网关了拒绝图片时回 400（正文含 `image_url` / `image format` /
   `image length and width` 等字样），判 `UNSUPPORTED_CONTENT` 并给出可操作建议；
   413（请求体超限）判 `INVALID_REQUEST` 并点名图片预算配置项。二者都不会被误报成登录问题
 - **附件服务是懒依赖**：`ctx.get('attachments')` 在请求路径上解析，插件在没有附件服务的
   部署里照样挂载；真收到图片时才给明确拒绝
+
+### 5.3 数据类型：哪些能发、哪些由宿主处理
+
+DSH 的消息词汇只有 `text` 与 `image` 两种模态；适配器能决定的只有图片。逐类口径如下
+（完整实测表见 [`docs/capability-matrix.md`](docs/capability-matrix.md)）：
+
+| 输入 | DSH 表示 | 本插件做什么 | 说明 |
+|---|---|---|---|
+| 文本 | text block | 拼成 `content` 字符串 | 与旧版 wire 一致 |
+| 用户图片 | image block + 附件引用 | handle 文本 + `image_url` data URL | 只有实测能读图的模型声明 `image` |
+| 工具结果图片 | tool 消息里的 image block | 数组 content（text + `image_url`） | 已实网验证 |
+| 文件（PDF/代码等） | file block + 持久字节 | **不发送**；宿主先 `projectFilesToText` 投影成只读 handle 文本 | 模型用工具按路径读；适配器收到 file block 视为调用方错误并拒绝 |
+| 音频 / 视频 | DSH 没有对应 content block | 不支持 | 不要按 CANNWork 的 `modalities` 声明去猜 |
+| reasoning / tool-call / usage | 各自的结构化 chunk | 按 DSH 契约映射 | 见 §5.2 |
+
+> CANNWork 给每个模型声明 `image/pdf/audio/video`，那是它的平台声明，不是逐模型实测。
+> 本插件只按实测的精确 model id 开放图片；未实测的一律纯文本。
 
 ---
 
@@ -198,9 +222,9 @@ OpenAI 兼容协议，不包一层 provider SDK，因此**没有任何第三方�
 
 | 包 | 声明 | 说明 |
 |---|---|---|
-| `@deepseek-ai/dsh-llm` | peer `>=0.2.1-rc.2 <0.3.0` | DSH 宿主提供（`LlmAdapter`、错误体系） |
-| `@deepseek-ai/schemastery` | peer `^3.18.5` | DSH 宿主提供（`Config` schema） |
-| `@deepseek-ai/cordis` | peer `^4.0.5` | DSH 宿主提供（运行时容器） |
+| `@deepseek-ai/dsh-llm` | peer `>=0.2.2-rc.3 <0.3.0` | DSH 宿主提供（`LlmAdapter`、错误体系） |
+| `@deepseek-ai/schemastery` | peer `>=3.18.5 <4.0.0` | DSH 宿主提供（`Config` schema） |
+| `@deepseek-ai/cordis` | peer `>=4.0.5 <5.0.0` | DSH 宿主提供（运行时容器） |
 
 > DSH profile 使用 `nodeLinker: hoisted` + `autoInstallPeers: false`，
 > 所以 `peerDependencies` 不会被装进 profile，只在运行时向宿主解析。
@@ -239,6 +263,11 @@ OpenAI 兼容协议，不包一层 provider SDK，因此**没有任何第三方�
     requestImageMaxBytes: 1048576
     # 单请求累计 base64 图片上限；超出触发图片降级重试
     maxRequestImageBytes: 8388608
+    # 图片计数上限与每次计数溢出的降级步长；网关未公布计数限制，默认是占位大值
+    maxRequestImages: 1000000
+    imageOffloadCountQuantum: 1000000
+    # 目录后台刷新间隔（毫秒）；0 关闭定时刷新，挂载拉取与失败重试仍保留
+    catalogRefreshMs: 600000
 ```
 
 `visionModels: []` 即完全回到文本模式（前端会以「模型不支持图片输入」拒绝附件）。
@@ -275,7 +304,13 @@ OpenAI 兼容协议，不包一层 provider SDK，因此**没有任何第三方�
   令牌过期就跟着失效，重开 CANNWork 即恢复
 - **`auth.json` 是 opencode 的密钥库**：读不到时按「未配置」降级，不抛错
 - **模型按账号可见性返回**：换账号后重新请求即反映新 roster（无需重启）
-- **内核版本敏感**：`LlmAdapter` 契约在 DSH 版本间可能变化，升级内核后请重跑 `node e2e.mjs`
+- **内核版本敏感**：`LlmAdapter` 契约在 DSH 版本间可能变化，升级内核后请重跑 `npm run test:compat` 与 `node e2e.mjs`
+- **文件不是 wire 模态**：PDF/代码等以宿主投影的只读 handle 文本到达模型，由模型用工具读取；
+  插件不发送原始文件字节。音频/视频没有 DSH content block，不支持
+- **图片计数上限是占位值**：网关未公布每请求图片数上限，`maxRequestImages` 默认 `1000000`
+  只是类型占位；真正生效的是 8MiB 字节预算。实测到计数限制后再收紧
+- **只支持 0.2.2 线及以上**：`engines.dsh` 为 `>=0.2.2-rc.3 <0.3.0`，Node `>=24.9.0`；
+  alpha 线自身要求 Node `>=24.22.3`（由宿主约束）
 
 ### 8.1 图片能力实测与更新（2026-11-17）
 
@@ -300,6 +335,19 @@ node scripts/probe-vision.mjs --timeout-ms 40000
 
 网关模型变化后重跑脚本，把输出的 `visionModels:` 数组粘进 §7 的配置即可，无需改代码。
 
+### 8.2 故障排查
+
+| 现象 / code | 原因 | 处理 |
+|---|---|---|
+| 模型列表很久不出现，日志 `catalog unavailable (auth)` | `session.json` 缺失或 JWT 过期 | 重开 CANNWork 登录；插件会在下一个请求的 `AUTH` 后自动重试目录 |
+| `MISSING_CREDENTIAL` / `INVALID_CREDENTIAL` | 两个凭据之一缺失 / 含空格换行等无法进 HTTP 头的字符 | 重开 CANNWork 让它重写文件；不要手改 opencode 的 auth.json |
+| `AUTH` + 提示重登 | 401，或正文不点名模型的 403 | 确认 CANNWork 登录态；若刚换号，等目录刷新或重载插件 |
+| `MODEL_UNSUPPORTED` | 403 且正文把拒绝挂到某个模型（名册过期/无权限） | 重新拉目录；不要为此重登 |
+| `UNSUPPORTED_CONTENT` | 图片发给了纯文本模型、图片格式/尺寸不符，或 file block 绕过了宿主投影 | 换 `visionModels` 内的模型；检查图片；不要手写 file block |
+| `IMAGE_OFFLOAD_REQUIRED` | 单请求图片累计超出预算 | 宿主会自动 offload 最旧图片并重试；持续出现则调低 `maxRequestImageBytes` |
+| `TIMEOUT` / `STREAM_CLOSED` | 网关挂起或流提前结束 | 重试；`deepseek-v4-flash` 带图会挂起，已默认排除 |
+| `INVALID_CONFIG`（挂载期） | `baseURL`/`modelsURL` 非 https 或非法 URL | 用 https；本地 mock 仅允许回环 http |
+
 ### 兼容性声明与判定规则
 
 DSH 宿主**只按 `engines.dsh` 判定**插件是否兼容：该字段存在时 `peerDependencies` 不参与
@@ -308,12 +356,13 @@ DSH 宿主**只按 `engines.dsh` 判定**插件是否兼容：该字段存在时
 所以 `0.2.3-alpha.2` 落在下面的区间内：
 
 ```json
-"engines": { "dsh": ">=0.2.1-rc.2 <0.3.0" },
-"peerDependencies": { "@deepseek-ai/dsh-llm": ">=0.2.1-rc.2 <0.3.0" }
+"engines": { "dsh": ">=0.2.2-rc.3 <0.3.0", "node": ">=24.9.0" },
+"peerDependencies": { "@deepseek-ai/dsh-llm": ">=0.2.2-rc.3 <0.3.0" }
 ```
 
 早期版本把 `dsh-llm` 精确钉成 `0.2.1-rc.2`，App 升到 `0.2.1-rc.3` 后就被判为
 `incompatible` 并拒绝启动——**精确钉版本在宿主小版本升级时会立刻失效**，所以现在用区间。
+0.2.1 线（Node 22）已不再支持；0.2.2-rc.3 与 0.2.3-alpha.x 是当前验证的两条线。
 
 升级内核后若被判定不兼容，先确认契约是否真的变了（本插件只依赖 `LlmAdapter` 基类与
 `StreamChunk` 协议），再相应放宽区间。
@@ -340,11 +389,12 @@ DSH 宿主**只按 `engines.dsh` 判定**插件是否兼容：该字段存在时
 
 本插件处理的只有两个凭据，都来自 CANNWork 写下的本机文件：
 
-| 凭据 | 读取位置 | 发送到 |
+| 凭据 | 读取位置（按顺序） | 发送到 |
 |---|---|---|
-| JWT（`accessToken`） | `~/.local/share/opencode/session.json` | `baseURL` 与 `modelsURL` |
-| VK（`cannbot.key`，兜底） | `~/.local/share/opencode/auth.json` | 仅 `baseURL` |
-| VK（逐模型 `apiKey`，优先） | `modelsURL` 返回的对应模型行 | 仅 `baseURL` |
+| JWT（`accessToken`） | 数据目录 `opencode/session.json` → 配置目录（`$XDG_DATA_HOME` / `$XDG_CONFIG_HOME`） | `baseURL` 与 `modelsURL` |
+| VK（`cannbot.key`） | **配置目录优先** → 数据目录（当前 CANNWork 写配置目录，旧副本不得遮蔽新值） | 仅 `baseURL` |
+| VK（legacy `cannbot-cli.refresh`，仅 `vk-` 前缀） | 数据目录 → 配置目录 | 仅 `baseURL` |
+| VK（逐模型 `apiKey`，最高优先） | `modelsURL` 返回的对应模型行 | 仅 `baseURL` |
 
 **这两个端点由配置决定**。默认值就是 CANNBOT 官方网关；如果你把 `baseURL` /
 `modelsURL` 改到别处，凭据就会发到别处——这一点与所有可配置端点的 provider 相同。
@@ -367,44 +417,32 @@ DSH 宿主**只按 `engines.dsh` 判定**插件是否兼容：该字段存在时
 ### 9.3 回归测试
 
 ```bash
-npm test        # 离线，不需要 CANNBOT 登录
+npm test              # 全部离线脚本，不需要 CANNBOT 登录
+npm run test:compat   # 同一套脚本跑 0.2.2-rc.3 与 0.2.3-alpha.2 两条宿主线
+npm run check         # 上面两项 + 密钥扫描
+node e2e.mjs          # 实网端到端（需 CANNWork 登录，消耗额度）
 ```
 
-覆盖四组：① 明文端点被拒、回环例外、重定向不外传凭据（断言重定向目标**从未被访问**）、
-失败文本已脱敏；② 适配器的 usage 映射——网关的 `prompt_tokens` 含缓存命中，而内核的
-`inputTokens` 只算未命中，命中数必须减出去（否则会话里「缓存命中」的分母会重复计数，
-永远不超过 50%）。第②组还把**宿主自己的 usage 判定规则**（`dsh-client-ui-chat` 的
-`normalizeUsage`）抄进测试：宿主遇到自相矛盾的样本会**整条丢弃**，所以每个 shape 都必须
-通过该 gate，并断言 `input + cacheRead + output === total`。覆盖的 wire 形状包括
-`prompt_tokens_details.cached_tokens`、DeepSeek 拼写的 `prompt_cache_hit_tokens`、无缓存
-字段、命中为 0、全命中、`cached > prompt`（命中数被 clamp 到 prompt）、`null`/字符串/负数
-等非法计数、`reasoning_tokens > completion_tokens`、缺 `prompt_tokens`、矛盾或缺失的
-`total_tokens`；
-③ 凭据选择与 403 分类——catalog 每行 `apiKey` 被保留且请求优先使用、无 key 行与兜底
-目录回退账号 VK、401 与普通 403 判 `AUTH`、正文点名模型的 403 判 `MODEL_UNSUPPORTED`，
-且回显的 VK 在错误信息中被脱敏；④ 图片输入——视觉/文本模型的模态声明、图片
-`image_url` data URL 与 handle 文本序列化、纯文本 wire 的冻结消息 golden、同一附件只读一次
-但每次出现都序列化、`offloaded` 图片零字节读取、工具消息图片、缺失附件服务与未声明模型的
-拒绝、超预算抛 `IMAGE_OFFLOAD_REQUIRED`（精确计数与 base64 口径）、取消/看门狗超时与
-附件解析错误的分类、网关 400 图片拒绝与 413 体限的分类。四个脚本全部通过时输出形如：
+| 脚本 | 覆盖 |
+|---|---|
+| `import-surface.mjs` | 插件导入的每个 `dsh-llm` 符号在该宿主存在；`schemastery` 默认导出可调用 |
+| `config.mjs` | `Config` 默认值、显式值、非法类型/边界 |
+| `manifest.mjs` | `package.json`、`dsh.bundle.patch`、patch 行 id/name、打包文件、无安装脚本、locale/icon/detail 元数据 |
+| `plugin.mjs` | `apply` 注册 `cannbot`、返回 disposer、非法端点挂载期拒绝、无 `ctx.effect` 仍可挂载 |
+| `wire.mjs` | 消息/工具/请求体 golden（含 reasoning 与 tool_calls）、SSE 分帧（CRLF/comment/`[DONE]`/尾帧） |
+| `errors.mjs` | 401/403 模型/429/5xx/413/图片 400/上下文/配额 分类、Retry-After 秒与 HTTP-date、脱敏、端点校验 |
+| `credentials.mjs` | 配置目录优先的 VK、legacy 回退、JWT 过期解码、`authStatus` 不含值、头注入规则 |
+| `catalog.mjs` | 挂载拉取、并发单飞行、定时刷新、失败保留、`refreshSoon` 冷却、dispose 停止 |
+| `adapter-meta.mjs` | `listModels`/`resolveModel`（context 取整、`defaultMaxTokens`）、图片计数/字节预算、file block 拒绝 |
+| `adapter-finish.mjs` | `content_filter`/未知 finish → `INVALID_RESPONSE`、空响应、坏工具 JSON、流内 429 status |
+| `security.mjs` | 明文端点拒绝、回环例外、重定向不外传凭据、失败文本脱敏 |
+| `adapter-usage.mjs` | 网关 `prompt_tokens` 含缓存命中 → 内核 DISJOINT 三桶，含宿主 `normalizeUsage` gate |
+| `adapter-auth.mjs` | 逐模型 VK 优先级、401/403 分类、凭据脱敏、缺失/格式非法凭据 |
+| `adapter-image.mjs` | 图片模态声明、data URL/handle 序列化、附件只读一次、offload 预算、取消/超时分类 |
 
-```
-ok   credential material is redacted out of provider failure text
-
-PASS: credential-handling checks hold.
-ok   cached > prompt: the host gate accepts the sample (total=110)
-ok   reasoning > output: reasoningTokens clamps to output = 10
-
-PASS: wire usage is mapped to disjoint harness counts the host accepts.
-ok   401: code stays AUTH = "AUTH"
-ok   403 model refusal: echoed VK is redacted = false
-
-PASS: credential selection and 403 classification hold.
-ok   image part is an OpenAI vision data URL = {"type":"image_url",...}
-ok   over-budget request fails with IMAGE_OFFLOAD_REQUIRED = "IMAGE_OFFLOAD_REQUIRED"
-
-PASS: image input advertisement, serialization, and refusals hold.
-```
+`test:compat` 通过 `scripts/host-matrix.mjs` 为每条宿主线建临时包根（复制 `lib/`、`test/`，
+链接该宿主自己的 `@deepseek-ai/*`），所以 alpha 删除 `assertUsableApiKey` 这类变化会在
+离线测试里直接失败，而不是等到 bundle 激活日志。
 
 ### 9.4 仓库本身的卫生
 

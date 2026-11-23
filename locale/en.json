@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "CANNBOT Connect",
+    "description": "Brings the CANNBOT gateway's chat models into DSH by reusing the sign-in CANNWork already keeps for opencode: no separate key and no OAuth flow. The model roster is read live and refreshed in the background; image input is enabled only for the exact models measured to read images, while unmeasured models stay text-only. Files reach the model as read-only handles (audio and video are not part of the DSH message vocabulary). Tested on DSH 0.2.2-rc.3 and 0.2.3-alpha.x.",
+    "detail": "docs/DETAIL.md"
+  }
+}

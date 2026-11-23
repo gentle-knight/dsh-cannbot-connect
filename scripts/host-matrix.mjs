@@ -54,6 +54,10 @@ const OFFLINE_TESTS = [
   'test/plugin.mjs',
   'test/wire.mjs',
   'test/errors.mjs',
+  'test/credentials.mjs',
+  'test/catalog.mjs',
+  'test/adapter-meta.mjs',
+  'test/adapter-finish.mjs',
   'test/security.mjs',
   'test/adapter-usage.mjs',
   'test/adapter-auth.mjs',
@@ -83,8 +87,10 @@ function stageHost(host) {
   if (missing.length > 0) return { problem: `missing packages: ${missing.join(', ')}` }
 
   const dir = mkdtempSync(join(tmpdir(), `cannbot-matrix-${host.name}-`))
-  for (const entry of ['lib', 'test']) cpSync(join(packageDir, entry), join(dir, entry), { recursive: true })
-  for (const entry of ['package.json', 'cordis.patch.yml', 'README.md', 'e2e.mjs']) {
+  for (const entry of ['lib', 'test', 'docs', 'locale']) {
+    if (existsSync(join(packageDir, entry))) cpSync(join(packageDir, entry), join(dir, entry), { recursive: true })
+  }
+  for (const entry of ['package.json', 'cordis.patch.yml', 'README.md', 'e2e.mjs', 'LICENSE', 'icon.svg', 'CHANGELOG.md']) {
     if (existsSync(join(packageDir, entry))) cpSync(join(packageDir, entry), join(dir, entry))
   }
   mkdirSync(join(dir, 'node_modules', '@deepseek-ai'), { recursive: true })

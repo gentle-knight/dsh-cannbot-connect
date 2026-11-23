@@ -9,8 +9,11 @@
  */
 import { Config } from '../lib/config.js'
 import {
+  DEFAULT_CATALOG_REFRESH_MS,
   DEFAULT_CONTEXT_WINDOW,
+  DEFAULT_IMAGE_OFFLOAD_COUNT_QUANTUM,
   DEFAULT_MAX_REQUEST_IMAGE_BYTES,
+  DEFAULT_MAX_REQUEST_IMAGES,
   DEFAULT_MAX_TOKENS,
   DEFAULT_REQUEST_IMAGE_MAX_BYTES,
   DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET,
@@ -50,6 +53,9 @@ eq('visionModels default', defaults.visionModels, [...DEFAULT_VISION_MODELS])
 eq('requestImagePixelBudget default', defaults.requestImagePixelBudget, DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET)
 eq('requestImageMaxBytes default', defaults.requestImageMaxBytes, DEFAULT_REQUEST_IMAGE_MAX_BYTES)
 eq('maxRequestImageBytes default', defaults.maxRequestImageBytes, DEFAULT_MAX_REQUEST_IMAGE_BYTES)
+eq('maxRequestImages default', defaults.maxRequestImages, DEFAULT_MAX_REQUEST_IMAGES)
+eq('imageOffloadCountQuantum default', defaults.imageOffloadCountQuantum, DEFAULT_IMAGE_OFFLOAD_COUNT_QUANTUM)
+eq('catalogRefreshMs default', defaults.catalogRefreshMs, DEFAULT_CATALOG_REFRESH_MS)
 check('baseURL default is the CANNBOT gateway', /^https:\/\/cannbot\.hicann\.cn\//.test(defaults.baseURL))
 check('modelsURL default is the roster endpoint', /^https:\/\/cannbot\.hicann\.cn\//.test(defaults.modelsURL))
 
@@ -83,6 +89,10 @@ const rejects = (label, value) => {
 rejects('a string where a number is required', { streamIdleTimeoutMs: 'soon' })
 rejects('a non-array visionModels', { visionModels: 'model-a' })
 rejects('a non-string baseURL', { baseURL: 42 })
+rejects('a zero image count bound', { maxRequestImages: 0 })
+rejects('a negative timeout', { streamIdleTimeoutMs: -1 })
+rejects('a negative refresh interval', { catalogRefreshMs: -1 })
+ok('catalogRefreshMs 0 disables the timer', Config({ catalogRefreshMs: 0 }).catalogRefreshMs === 0)
 
 // Unknown keys are the host's concern (the Loader validates rows); the schema
 // itself must not silently drop a known field, which the checks above cover.
