@@ -49,11 +49,12 @@ const RED_PNG =
 
 /** A minimal one-page PDF whose only sentence is the probe word. */
 function buildProbePdf() {
+  const stream = 'BT /F1 18 Tf 20 100 Td (The secret word is BANANA) Tj ET\n'
   const objects = [
     '1 0 obj<< /Type /Catalog /Pages 2 0 R >>endobj\n',
     '2 0 obj<< /Type /Pages /Kids [3 0 R] /Count 1 >>endobj\n',
     '3 0 obj<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>endobj\n',
-    '4 0 obj<< /Length 78 >>stream\nBT /F1 18 Tf 20 100 Td (The secret word is BANANA) Tj ET\nendstream\nendobj\n',
+    `4 0 obj<< /Length ${Buffer.byteLength(stream, 'latin1')} >>stream\n${stream}endstream\nendobj\n`,
     '5 0 obj<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>endobj\n',
   ]
   let pdf = '%PDF-1.4\n'
