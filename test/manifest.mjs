@@ -78,7 +78,7 @@ check('files includes README', files.includes('README.md'))
 check('files does not include node_modules or scratch', !files.some((entry) => /node_modules|scratch|reports/.test(entry)))
 check('files includes the locale documents', files.includes('locale/*.json'))
 check('files includes the icon', files.includes('icon.svg'))
-check('files includes the detail documents', files.includes('docs'))
+check('files includes the user-facing docs', files.includes('docs/DETAIL.md') && files.includes('docs/CONFIGURATION.md'))
 check('exports exposes ./icon', manifest.exports?.['./icon'] === './icon.svg')
 check('exports exposes the locale JSON', manifest.exports?.['./locale/*.json'] === './locale/*.json')
 

@@ -16,10 +16,16 @@
     "cordis.patch.yml",
     "README.md",
     "LICENSE",
+    "CHANGELOG.md",
     "locale/*.json",
     "icon.svg",
-    "docs",
-    "CHANGELOG.md"
+    "docs/DETAIL.md",
+    "docs/DETAIL.zh.md",
+    "docs/preview.svg",
+    "docs/CONFIGURATION.md",
+    "docs/TROUBLESHOOTING.md",
+    "docs/SECURITY.md",
+    "docs/INSTALL.md"
   ],
   "dsh": {
     "bundle": {

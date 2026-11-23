@@ -14,6 +14,10 @@
   because they need a DSH host or CANNWork sign-in.
 - Fix the stale duplicate Node prerequisite in the README (the 0.2.1 line is
   gone; the only floor is Node >=24.9.0).
+- Rewrite the README for end users: functionality, install, usage, images/files,
+  configuration, FAQ, security, and limitations; move architecture, detailed
+  troubleshooting, security internals, manual install, and maintainer guidance
+  to `docs/` and `CONTRIBUTING.md`.
 
 ## 0.4.1
 
