@@ -1,5 +1,15 @@
 # dsh-cannbot-connect
 
+[![verify](https://github.com/gentle-knight/dsh-cannbot-connect/actions/workflows/verify.yml/badge.svg)](https://github.com/gentle-knight/dsh-cannbot-connect/actions/workflows/verify.yml)
+
+[GitHub（插件市场 / 安装入口）](https://github.com/gentle-knight/dsh-cannbot-connect) ·
+[GitCode（开发主仓）](https://gitcode.com/gentle-knight/dsh-cannbot-connect)
+
+> **仓库关系**：GitCode 是开发主仓；GitHub 是插件市场条目指向的地址，也是 GitCode
+> 的 Push 镜像目标。**Push 镜像还需要在 GitCode 网页配置一次**（见 §10.1）；配置完成后，
+> 日常提交只推 GitCode，镜像会覆盖 GitHub。不要直接向 GitHub 提交，否则下一次同步会覆盖它。
+> 同步的详细配置、令牌权限与验证步骤见 [`docs/REPOSITORY-SYNC.md`](docs/REPOSITORY-SYNC.md)。
+
 把 **CANNBOT 网关**的模型接入 **DeepSeek Harness (DSH)**，复用 **CANNWork**
 已经为 opencode 建立好的登录态，不另起一套 OAuth、不需要额外填任何 key。
 
@@ -54,7 +64,6 @@ CANNBOT 网关要求**两个凭据同时具备**（实测，缺一即 401）：
 其他要求：
 
 - **DSH 内核 `>=0.2.2-rc.3 <0.3.0`、Node `>=24.9.0`**（宿主按 `engines.dsh` 判定兼容性；0.2.1 线不再支持）
-- **Node.js `^22.19.0 || >=24.0.0`**
 - 能访问 `cannbot.hicann.cn`
 
 ---
@@ -64,11 +73,16 @@ CANNBOT 网关要求**两个凭据同时具备**（实测，缺一即 401）：
 插件**没有任何运行时依赖**，装进 profile 只需要一条命令：
 
 ```bash
-git clone https://gitcode.com/gentle-knight/dsh-cannbot-connect.git
+git clone https://github.com/gentle-knight/dsh-cannbot-connect.git
 dsh plugin --profile desktop add file:$(pwd)/dsh-cannbot-connect
 ```
 
 然后**重启 DSH**，模型选择器里会出现 **CANNBOT** 分组。
+
+> 国内网络也可以从 GitCode 克隆同一份内容：
+> `git clone https://gitcode.com/gentle-knight/dsh-cannbot-connect.git`。
+> 配置好 §10.1 的 GitCode Push 镜像后，两边的 `main` 会保持同步；市场与
+> `package.json` 的 `repository` 指向 GitHub。
 
 > `~/.dsh/profiles/desktop` 由 App 管理。若 CLI 报 `EPERM`，说明该发行版不允许
 > 独立 CLI 写 `desktop` profile；此时改用 Web/TUI profile，或参见 §7 手动挂载。
@@ -491,51 +505,72 @@ node e2e.mjs          # 实网端到端（需 CANNWork 登录，消耗额度）
 
 ---
 
-## 10. 投稿到插件市场
+## 10. 仓库同步与插件市场
 
-DSH 插件市场的目录来自 **[awesome-dsh-plugins](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)**：
-向 `data/plugins/` 提**一个 YAML 文件**即可，站点与市场会自动收录（通常一天内）。
+本插件已经进入 DSH 插件市场目录：
 
-### 10.1 需要先满足的前置条件
+- **市场 / 安装入口（GitHub）**：<https://github.com/gentle-knight/dsh-cannbot-connect>
+- **开发主仓（GitCode）**：<https://gitcode.com/gentle-knight/dsh-cannbot-connect>
+- **市场条目**：`awesome-dsh-plugin/awesome-dsh-plugin` 仓库中的
+  `data/plugins/gentle-knight__dsh-cannbot-connect.yml`，分类 `model`
+- 完整同步方案、令牌权限与验证步骤：[`docs/REPOSITORY-SYNC.md`](docs/REPOSITORY-SYNC.md)
 
-| 条件 | 本仓库现状 |
-|---|---|
-| `package.json` 声明 `dsh.bundle`（安装前提） | ✅ 已有 |
-| 仓库根有 `cordis.patch.yml` | ✅ 已有 |
-| 真实可用代码，非占位 | ✅ 有 e2e 与安全测试 |
-| 仓库创建满 1 天 | ✅ 已满 |
-| 仓库添加 `dsh-plugin` topic | ⚠️ 待加 |
-| **`url` 必须是 GitHub 仓库** | ❌ **当前在 GitCode** |
+市场只接受 `https://github.com/...` 的仓库地址，所以 GitHub 是市场入口；GitCode 通过
+**Push 镜像**同步过去。**镜像目前尚未在 GitCode 网页启用**，配置完成后日常只需要推 GitCode。
 
-最后一条是硬门槛：该目录现有 **1006 条全部指向 github.com**，投稿指南也写明
-`url` 必须与仓库完全一致。因此**想上架，需要一个 GitHub 仓库**（镜像或迁移均可）。
+### 10.1 配置 GitCode → GitHub Push 镜像
 
-### 10.2 条目文件
+这一步在 GitCode 网页完成（CLI 无法代替）：
 
-在 `awesome-dsh-plugins` 仓库新建 `data/plugins/<owner>__<repo>.yml`：
+1. 在 GitHub 创建 **fine-grained personal access token**：
+   - Repository access：只选 `gentle-knight/dsh-cannbot-connect`
+   - Permissions：`Contents: Read and write`（`Metadata: Read-only` 会自动带上）
+   - 不勾选 Actions、Packages 等不需要的权限；设置合理过期时间
+2. 打开 GitCode 项目 → **项目设置** → **仓库镜像** → **Push** → **添加镜像**
+3. 填写：
+   - 目标地址：`https://gentle-knight@github.com/gentle-knight/dsh-cannbot-connect.git`
+   - 目标平台账号：`gentle-knight`
+   - 个人令牌：上一步的 GitHub PAT
+4. 保存后，GitCode 每次提交都会自动覆盖 GitHub 镜像（最多 5 个 Push 镜像；推送超时
+   代码 30 分钟、LFS 150 分钟）。
 
-```yaml
-url: https://github.com/<owner>/dsh-cannbot-connect
-name: <owner>/dsh-cannbot-connect
-category: model
-description:
-  en: Bring CANNBOT gateway models into DeepSeek Harness by reusing CANNWork's opencode sign-in.
-  zh: 复用 CANNWork 的 opencode 登录态，把 CANNBOT 网关的模型接入 DeepSeek Harness。
+**不要把 PAT 写进仓库、README、issue 或聊天记录。** 它只保存在 GitCode 的镜像配置里；
+怀疑泄露时先在 GitHub 撤销，再在 GitCode 更新。
+
+### 10.2 验证同步
+
+```bash
+git ls-remote https://gitcode.com/gentle-knight/dsh-cannbot-connect.git refs/heads/main
+git ls-remote https://github.com/gentle-knight/dsh-cannbot-connect.git refs/heads/main
 ```
 
-分类用 `model`（"Models & Providers / 模型与账号接入"），与本插件做的事一致。
+两次输出的 SHA 应一致（镜像有延迟时等几秒到几分钟）。GitHub 仓库的
+`updated_at` 也会随同步变化。市场/storefront 的下一次构建会读取 GitHub 上的
+`package.json`、README、locale 与 icon。
 
-### 10.3 推荐：发布到 npm
+> 在镜像配置完成前，如需先把当前版本推到 GitHub，可以手动执行一次
+> `git push https://github.com/gentle-knight/dsh-cannbot-connect.git main`；
+> 镜像配置完成后，以 GitCode 的提交为准，不要再直接推 GitHub。
 
-投稿指南指出，发布 npm 包可让安装**跳过构建授权**（`allowBuilds`）。本插件零运行时
-依赖，npm 包很小。发布前需要：
+### 10.3 市场条目的维护
 
-1. 删掉 `package.json` 里的 `"private": true`（现在刻意保留，防止误发布）
-2. `npm login`（需要你自己的 npm 账号）
-3. `npm publish --access public`
+- 条目文件已在 awesome 仓库里；只有要改**分类、双语描述、截图**时才需要提 PR，
+  且只改 `data/plugins/gentle-knight__dsh-cannbot-connect.yml`。
+- 截图是可选增强：在仓库根放 `screenshots.json`（1–8 张、仓库内相对路径的
+  **位图**），市场会优先使用它；不声明时市场会从 README 自动抽取。当前仓库没有
+  `screenshots.json`，README 里也没有内嵌大图，所以详情页暂无商店式截图。
+- 市场卡片的 `icon` 需要 GitHub 托管的位图（png/jpg/webp），不能用 SVG；本仓库的
+  `icon.svg` 是 DSH 插件管理器用的。要加市场图标，需要另外生成一张 PNG 并在
+  awesome 条目的 `icon:` 字段声明。
+- `package.json` 已移除 `private`，但**尚未发布到 npm**；当前安装方式是
+  `git clone` + `dsh plugin add file:`。如果以后发布 npm，再把条目补上 `tarball`
+  或 npm 安装方式。
 
-不发 npm 也可以：把预构建 tarball 挂到 GitHub Release，然后在条目里加
-`tarball: <url>`，市场会优先展示它。
+### 10.4 CI
+
+GitHub 镜像上的 [`.github/workflows/verify.yml`](.github/workflows/verify.yml) 会运行
+语法检查、18 组离线测试、覆盖率门槛和密钥扫描。宿主矩阵与实网 e2e 不在 GitHub
+CI 里跑：前者需要本机安装 DSH 宿主，后者需要 CANNWork 登录与网关额度。
 
 ---
 

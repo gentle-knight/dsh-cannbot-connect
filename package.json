@@ -1,6 +1,6 @@
 {
   "name": "dsh-cannbot-connect",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Bring CANNBOT gateway models into DeepSeek Harness by reusing CANNWork's opencode sign-in, with a live model roster and measured per-model image support.",
   "type": "module",
   "main": "lib/index.js",
@@ -51,7 +51,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://gitcode.com/gentle-knight/dsh-cannbot-connect.git"
+    "url": "git+https://github.com/gentle-knight/dsh-cannbot-connect.git"
   },
   "keywords": [
     "dsh-plugin",
@@ -62,8 +62,8 @@
   ],
   "displayName": "CANNBOT Connect",
   "icon": "icon.svg",
-  "homepage": "https://gitcode.com/gentle-knight/dsh-cannbot-connect#readme",
+  "homepage": "https://github.com/gentle-knight/dsh-cannbot-connect#readme",
   "bugs": {
-    "url": "https://gitcode.com/gentle-knight/dsh-cannbot-connect/issues"
+    "url": "https://github.com/gentle-knight/dsh-cannbot-connect/issues"
   }
 }

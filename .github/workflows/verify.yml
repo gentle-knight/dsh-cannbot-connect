@@ -1,0 +1,45 @@
+name: verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  offline:
+    name: offline suite
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # The secret scanner checks history, not only the working tree.
+          fetch-depth: 0
+
+      - name: Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install development host packages
+        run: npm install --no-audit --no-fund
+
+      - name: Syntax
+        run: node scripts/check-syntax.mjs
+
+      - name: Offline suites
+        run: npm test
+
+      - name: Coverage gate
+        run: npm run test:coverage
+
+      - name: Secret scan
+        run: npm run check:secrets

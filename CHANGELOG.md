@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.4.2
+
+- Make GitHub the canonical marketplace/install URL: `package.json`
+  `repository`/`homepage`/`bugs` and the README install command now point at
+  `github.com/gentle-knight/dsh-cannbot-connect`; GitCode remains the development
+  source and mirrors to GitHub.
+- Document the GitCode-to-GitHub Push-mirror setup, token scope, verification,
+  and overwrite behavior in `docs/REPOSITORY-SYNC.md`, and rewrite the README
+  marketplace section for the already-listed entry.
+- Add `.github/workflows/verify.yml` (syntax, 18 offline suites, coverage gate,
+  secret scan) and the README badge. Host-matrix and live e2e remain local
+  because they need a DSH host or CANNWork sign-in.
+- Fix the stale duplicate Node prerequisite in the README (the 0.2.1 line is
+  gone; the only floor is Node >=24.9.0).
+
 ## 0.4.1
 
 - Resolve credentials from platform-specific candidates: the home layout stays
