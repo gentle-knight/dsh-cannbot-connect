@@ -1,9 +1,10 @@
 # Repository sync and marketplace listing
 
-Status: the GitHub repository exists and is the marketplace URL; the GitCode
-Push mirror still has to be enabled in the GitCode web UI (CLI cannot do it).
-This document records the topology, the exact setup, the token permissions, and
-the verification/rollback steps.
+Status: **configured and verified** — the GitCode Push mirror is active, and
+GitHub is the marketplace URL. First verification: 2026-11-23, both remotes at
+`80a7cde`; the GitHub `verify` workflow for that commit completed successfully.
+This document records the topology, setup, token permissions, verification, and
+rollback steps.
 
 ## 1. Topology
 
@@ -90,6 +91,16 @@ curl -sS https://raw.githubusercontent.com/gentle-knight/dsh-cannbot-connect/mai
 # GitHub repository metadata (topics, default branch, update time)
 curl -sS https://api.github.com/repos/gentle-knight/dsh-cannbot-connect
 ```
+
+## 5.1 Verification record
+
+| Date | GitCode `main` | GitHub `main` | Result |
+|---|---|---|---|
+| 2026-11-23 | `80a7cde` | `80a7cde` | matched; GitHub `verify` run succeeded |
+
+A later commit pushed only to GitCode should update GitHub without any manual
+push. If the two SHAs diverge, check the mirror status page and the token's
+`Contents`/`Workflows` permissions first.
 
 ## 6. Caveats
 
