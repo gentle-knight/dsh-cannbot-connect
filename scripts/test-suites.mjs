@@ -6,6 +6,7 @@
  * forgotten by the others.
  */
 export const OFFLINE_TESTS = [
+  'test/suite-manifest.mjs',
   'test/import-surface.mjs',
   'test/config.mjs',
   'test/manifest.mjs',

@@ -40,6 +40,16 @@ const check = (label, predicate, detail) => {
 
 const labels = (entries) => entries.map((entry) => entry.label)
 
+/**
+ * Compare paths with one separator.
+ *
+ * This suite must pass on Windows too: the production resolver uses the
+ * runtime's `path.join`, so a Windows run returns backslashes while the
+ * candidate ORDER (the property under test) is unchanged. Only the comparison
+ * is normalised; the runtime still uses the platform separator.
+ */
+const samePath = (left, right) => left.replaceAll('\\', '/') === right.replaceAll('\\', '/')
+
 // ── pure resolver: the candidate lists per platform ─────────────────────────
 {
   const entries = credentialRootEntries({
@@ -49,19 +59,19 @@ const labels = (entries) => entries.map((entry) => entry.label)
   })
   eq('linux XDG data candidates', labels(entries.filter((e) => e.kind === 'data')), ['xdg-data', 'home-data'])
   eq('linux XDG config candidates', labels(entries.filter((e) => e.kind === 'config')), ['xdg-config', 'home-config'])
-  check('linux XDG dirs are absolute joins', entries[0].dir === '/xdg/data/opencode')
+  check('linux XDG dirs are absolute joins', samePath(entries[0].dir, '/xdg/data/opencode'), entries[0].dir)
 }
 
 {
   const entries = credentialRootEntries({ platform: 'linux', home: '/home/u', env: {} })
   eq('linux without XDG falls back to the home layout', labels(entries), ['home-data', 'home-config'])
-  eq('linux home data path', entries[0].dir, '/home/u/.local/share/opencode')
+  check('linux home data path', samePath(entries[0].dir, '/home/u/.local/share/opencode'), entries[0].dir)
 }
 
 {
   const entries = credentialRootEntries({ platform: 'darwin', home: '/Users/<user>', env: {} })
   eq('macOS candidates', labels(entries), ['home-data', 'mac-app-support', 'home-config', 'mac-preferences'])
-  eq('macOS app-support path', entries[1].dir, '/Users/<user>/Library/Application Support/opencode')
+  check('macOS app-support path', samePath(entries[1].dir, '/Users/<user>/Library/Application Support/opencode'), entries[1].dir)
 }
 
 {
@@ -80,7 +90,7 @@ const labels = (entries) => entries.map((entry) => entry.label)
     'win-roaming-config',
     'win-roaming',
   ])
-  eq('Windows local-data path', entries[1].dir, 'C:/Users/<user>/AppData/Local/opencode/Data')
+  check('Windows local-data path', samePath(entries[1].dir, 'C:/Users/<user>/AppData/Local/opencode/Data'), entries[1].dir)
 }
 
 {

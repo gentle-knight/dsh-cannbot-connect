@@ -13,7 +13,7 @@
  * as `test-vk-...` do not trip the scanner (and the history scan stays usable
  * without rewriting history).
  */
-import { execFileSync, spawnSync } from 'node:child_process'
+import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'

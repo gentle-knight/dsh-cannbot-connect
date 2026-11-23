@@ -14,9 +14,11 @@
   suite list, a Node test runner, a Node secret scanner (the POSIX wrapper now
   delegates), a syntax checker, and a dependency-free V8 coverage gate
   (lines ≥98 %, functions ≥90 %). Current result: 100 % lines, 92.63 %
-  functions across 17 offline suites.
+  functions across 18 offline suites.
 - Make the host matrix platform-neutral (`DSH_INSTALL_DIR` or explicit
-  `CANNBOT_HOST_*`) and read the suite list from one place.
+  `CANNBOT_HOST_*`), use Windows junctions for its temporary links, and read
+  the suite list from one place. `npm run check` is now a Node orchestrator
+  with no shell operators.
 - Add regression suites for platform credential candidates, roster HTTP/store
   failures, adapter registration/forced stream branches, BOM/invalid JSON, and
   image-without-prepared-version; isolate every offline test from the real

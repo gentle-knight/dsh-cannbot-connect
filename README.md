@@ -81,7 +81,7 @@ dsh plugin --profile desktop add file:$(pwd)/dsh-cannbot-connect
 
 ```bash
 npm install
-npm test              # 17 组离线脚本，不需要网络与真实凭据
+npm test              # 18 组离线脚本，不需要网络与真实凭据
 npm run test:compat   # 同一套脚本跑 0.2.2-rc.3 与 0.2.3-alpha.2 两条宿主线
 npm run test:coverage # V8 覆盖率 + 门槛（当前 100% 行 / 92.63% 函数）
 npm run check         # 语法 + 离线测试 + 宿主矩阵 + 覆盖率 + 密钥扫描
@@ -439,7 +439,7 @@ DSH 宿主**只按 `engines.dsh` 判定**插件是否兼容：该字段存在时
 ### 9.3 回归测试
 
 ```bash
-npm test              # 17 组离线脚本，不需要 CANNBOT 登录
+npm test              # 18 组离线脚本，不需要 CANNBOT 登录
 npm run test:compat   # 同一套脚本跑 0.2.2-rc.3 与 0.2.3-alpha.2 两条宿主线
 npm run test:coverage # 覆盖率门槛：行 ≥98%、函数 ≥90%（当前 100% / 92.63%）
 npm run check         # 语法 + 离线测试 + 宿主矩阵 + 覆盖率 + 密钥扫描
@@ -449,6 +449,7 @@ node e2e.mjs          # 实网端到端（需 CANNWork 登录，消耗额度）
 | 脚本 | 覆盖 |
 |---|---|
 | `import-surface.mjs` | 插件导入的每个 `dsh-llm` 符号在该宿主存在；`schemastery` 默认导出可调用 |
+| `suite-manifest.mjs` | 磁盘上的 `test/*.mjs` 与 `scripts/test-suites.mjs` 一一对应，防止新增测试漏跑 |
 | `config.mjs` | `Config` 默认值、显式值、非法类型/边界 |
 | `manifest.mjs` | `package.json`、`dsh.bundle.patch`、patch 行 id/name、打包文件、无安装脚本、locale/icon/detail 元数据 |
 | `plugin.mjs` | `apply` 注册 `cannbot`、返回 disposer、非法端点挂载期拒绝、无 `ctx.effect` 仍可挂载 |

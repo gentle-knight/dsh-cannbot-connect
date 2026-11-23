@@ -43,7 +43,7 @@ CANNWork's UI, plugin-market review, load/soak testing, and a browser UI
 
 | Level | Purpose | Where |
 |---|---|---|
-| L0 static | Parse every module, validate the manifest/patch/exports, prove the host import surface | `scripts/check-syntax.mjs`, `test/manifest.mjs`, `test/import-surface.mjs` |
+| L0 static | Parse every module, validate the manifest/patch/exports, prove the host import surface, and prove every suite is registered | `scripts/check-syntax.mjs`, `test/manifest.mjs`, `test/import-surface.mjs`, `test/suite-manifest.mjs` |
 | L1 unit | Pure functions and schemas: config, wire translation, errors, credential resolution, platform candidates, model metadata | `test/config.mjs`, `test/errors.mjs`, `test/wire.mjs`, `test/credentials.mjs`, `test/credentials-platform.mjs`, `test/adapter-meta.mjs` |
 | L2 contract/integration | Adapter streams against a local mock gateway; plugin mount/dispose; roster store; security properties | `test/adapter-*.mjs`, `test/plugin.mjs`, `test/catalog*.mjs`, `test/security.mjs` |
 | L3 host compatibility | The same offline suites against the stable and alpha host lines | `scripts/host-matrix.mjs` |
@@ -88,7 +88,7 @@ Measured by `npm run test:coverage` (`scripts/coverage.mjs`).
   probes are operational tools, not runtime code.
 - **Thresholds (gate)**: lines **≥ 98 %**, functions **≥ 90 %**.
 - **Current result (2026-11-23, stable host)**: lines **100.00 % (1068/1068)**,
-  functions **92.63 % (88/95)**, 17 offline suites.
+  functions **92.63 % (88/95)**, 18 offline suites.
 - **Limits**: a line can be executed (covered) without its semantic branch
   being asserted; thresholds are a floor, not an adequacy proof. The risk-based
   matrix in §7 is the complementary evidence.
@@ -151,7 +151,7 @@ an explicit `CANNBOT_HOST_*`); for L4, CANNWork signed in and quota approved.
 
 **Exit for a change**:
 
-1. `npm test` passes (17 offline suites).
+1. `npm test` passes (18 offline suites).
 2. `npm run test:compat` passes on every available host line.
 3. `npm run test:coverage` meets lines ≥ 98 % and functions ≥ 90 %.
 4. `npm run check:secrets` is clean (tree and history).
@@ -165,7 +165,7 @@ an explicit `CANNBOT_HOST_*`); for L4, CANNWork signed in and quota approved.
 ## 10. Commands and CI
 
 ```bash
-npm test                 # 17 offline suites, no network, no real credentials
+npm test                 # 18 offline suites, no network, no real credentials
 npm run test:compat      # stable + alpha host matrix
 npm run test:coverage    # V8 coverage + thresholds
 npm run check:secrets    # tree + Git history scan
@@ -175,8 +175,9 @@ node scripts/probe-vision.mjs        # capability evidence (quota)
 node scripts/probe-data-types.mjs    # PDF/reasoning evidence (quota)
 ```
 
-`npm run check` is the single CI entry point and uses only Node plus Git, so a
-Linux, macOS, or Windows CI job can run it unchanged. The live suite is a
+`npm run check` is the single CI entry point: `scripts/check-all.mjs` spawns
+every step with the current Node binary, so it has no `&&` or shell dependency
+and a Linux, macOS, or Windows CI job can run it unchanged. The live suite is a
 separate, secret-gated job because it needs CANNWork sign-in and spends gateway
 quota. No provider-specific CI file is checked in; wire `npm run check` to the
 repository host's CI.

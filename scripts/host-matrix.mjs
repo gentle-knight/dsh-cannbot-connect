@@ -80,7 +80,7 @@ function stageHost(host) {
   if (missing.length > 0) return { problem: `missing packages: ${missing.join(', ')}` }
 
   const dir = mkdtempSync(join(tmpdir(), `cannbot-matrix-${host.name}-`))
-  for (const entry of ['lib', 'test', 'docs', 'locale']) {
+  for (const entry of ['lib', 'test', 'scripts', 'docs', 'locale']) {
     if (existsSync(join(packageDir, entry))) cpSync(join(packageDir, entry), join(dir, entry), { recursive: true })
   }
   for (const entry of ['package.json', 'cordis.patch.yml', 'README.md', 'e2e.mjs', 'LICENSE', 'icon.svg', 'CHANGELOG.md']) {
@@ -88,7 +88,9 @@ function stageHost(host) {
   }
   mkdirSync(join(dir, 'node_modules', '@deepseek-ai'), { recursive: true })
   for (const name of HOST_PACKAGES) {
-    symlinkSync(join(hostModules, name), join(dir, 'node_modules', '@deepseek-ai', name), 'dir')
+    // Windows needs a junction (or developer mode) for directory symlinks;
+    // a junction is available to a normal user account.
+    symlinkSync(join(hostModules, name), join(dir, 'node_modules', '@deepseek-ai', name), process.platform === 'win32' ? 'junction' : 'dir')
   }
   return { dir }
 }

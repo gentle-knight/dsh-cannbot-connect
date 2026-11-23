@@ -108,6 +108,9 @@ Ordering rules:
 - The bundle declares only host packages as peers; pnpm does not install them
   into the profile (the profile uses `nodeLinker: hoisted`,
   `autoInstallPeers: false`). No native binary is downloaded.
+- The host-matrix tooling creates directory links for its temporary host
+  roots; on Windows it uses a junction so a normal (non-elevated) account can
+  run `npm run test:compat`.
 - `npm pack`/`npm publish` content is platform-neutral: JS, JSON, SVG, Markdown.
 - The `icon.svg` and locale JSON are read by the host's Plugin Manager, not by
   the plugin; their validation is platform-independent.
