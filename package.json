@@ -25,18 +25,20 @@
     "dsh": ">=0.2.1-rc.2 <0.3.0"
   },
   "scripts": {
-    "test": "node test/import-surface.mjs && node test/security.mjs && node test/adapter-usage.mjs && node test/adapter-auth.mjs && node test/adapter-image.mjs",
-    "test:e2e": "node e2e.mjs"
+    "test": "node test/import-surface.mjs && node test/config.mjs && node test/manifest.mjs && node test/plugin.mjs && node test/wire.mjs && node test/errors.mjs && node test/security.mjs && node test/adapter-usage.mjs && node test/adapter-auth.mjs && node test/adapter-image.mjs",
+    "test:compat": "node scripts/host-matrix.mjs",
+    "test:e2e": "node e2e.mjs",
+    "check": "npm test && node scripts/host-matrix.mjs && ./check-secrets.sh"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "4.0.5",
-    "@deepseek-ai/dsh-llm": "0.2.1-rc.3",
-    "@deepseek-ai/schemastery": "3.18.5"
+    "@deepseek-ai/cordis": "4.1.0",
+    "@deepseek-ai/dsh-llm": "0.2.2-rc.3",
+    "@deepseek-ai/schemastery": "3.19.0"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "^4.0.5",
+    "@deepseek-ai/cordis": ">=4.0.5 <5.0.0",
     "@deepseek-ai/dsh-llm": ">=0.2.1-rc.2 <0.3.0",
-    "@deepseek-ai/schemastery": "^3.18.5"
+    "@deepseek-ai/schemastery": ">=3.18.5 <4.0.0"
   },
   "license": "MIT",
   "repository": {

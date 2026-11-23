@@ -81,8 +81,15 @@ dsh plugin --profile desktop add file:$(pwd)/dsh-cannbot-connect
 
 ```bash
 npm install
-npm test        # 四组：security / usage / auth / image
+npm test              # 全部离线脚本：导入面 / Config / 清单 / 插件契约 / wire / 错误 / 安全 / usage / 凭据 / 图片
+npm run test:compat   # 同一套离线脚本分别跑 0.2.2-rc.3 与 0.2.3-alpha.2 两条宿主线
+npm run check         # 上面两项 + 密钥扫描（commit 前跑）
 ```
+
+`test:compat` 通过 `scripts/host-matrix.mjs` 为每条宿主线建一个临时包根，复制 `lib/` 与
+`test/`、链接该宿主自己的 `@deepseek-ai/*` 包后再跑。它存在的直接原因：alpha 删除了
+`assertUsableApiKey`，而仓库默认的 `node_modules` 只指向一条宿主线；没有矩阵时，
+这类"导入面删除"只能在激活日志里看到。
 
 与真实网关的端到端验证需要 CANNWork 已登录：
 
