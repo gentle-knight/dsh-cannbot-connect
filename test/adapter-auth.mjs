@@ -274,6 +274,63 @@ async function main() {
         eq('403 model refusal: redaction marker present', /\[redacted\]/.test(error.message), true)
       },
     )
+    // ── 7. Missing and malformed credentials are classified apart ──────────
+    //
+    // DSH 0.2.3-alpha removed `assertUsableApiKey` from `dsh-llm`, and the 0.2.2
+    // line does not have its replacement (`normalizeApiKey`) in
+    // `dsh-credentials`. The plugin therefore owns these rules; this block pins
+    // them so a future host change cannot silently turn a malformed credential
+    // into a missing one (or leak an unusable value into a header).
+
+    /** Re-point credential reads at one throwaway pair of files. */
+    const withCredentials = async ({ jwt, vk }, fn) => {
+      const home = mkdtempSync(join(tmpdir(), 'dsh-cannbot-auth-case-'))
+      const dir = join(home, 'opencode')
+      mkdirSync(dir, { recursive: true })
+      if (jwt !== undefined) writeFileSync(join(dir, 'session.json'), JSON.stringify({ accessToken: jwt }))
+      if (vk !== undefined) writeFileSync(join(dir, 'auth.json'), JSON.stringify({ cannbot: { key: vk } }))
+      process.env.XDG_DATA_HOME = home
+      process.env.XDG_CONFIG_HOME = join(home, 'config-empty')
+      try {
+        return await fn()
+      } finally {
+        rmSync(home, { recursive: true, force: true })
+      }
+    }
+
+    const expectCredentialError = async ({ jwt, vk }, expectedCode, label) => {
+      await withCredentials({ jwt, vk }, async () => {
+        await withServer(gateway(), async ({ baseURL, requests }) => {
+          const adapter = adapterFor({ baseURL, modelsURL: `${baseURL}/models` })
+          const error = await runTurnError(adapter, 'model-personal')
+          eq(`${label}: code`, error.code, expectedCode)
+          eq(`${label}: no request was sent`, requests.length, 0)
+        })
+      })
+    }
+
+    await expectCredentialError({ vk: ACCOUNT_VK }, 'MISSING_CREDENTIAL', 'missing JWT')
+    await expectCredentialError({ jwt: '   ', vk: ACCOUNT_VK }, 'MISSING_CREDENTIAL', 'blank JWT')
+    await expectCredentialError(
+      { jwt: `${JWT.slice(0, 5)}\n${JWT.slice(5)}`, vk: ACCOUNT_VK },
+      'INVALID_CREDENTIAL',
+      'JWT with an embedded newline',
+    )
+    await expectCredentialError({ jwt: `abc${'\t'}def`, vk: ACCOUNT_VK }, 'INVALID_CREDENTIAL', 'JWT with a tab')
+    await expectCredentialError({ jwt: JWT }, 'MISSING_CREDENTIAL', 'missing VK')
+    await expectCredentialError({ jwt: JWT, vk: '  ' }, 'MISSING_CREDENTIAL', 'blank VK')
+    await expectCredentialError({ jwt: JWT, vk: 'vk has space' }, 'INVALID_CREDENTIAL', 'VK with space')
+    await expectCredentialError({ jwt: JWT, vk: 'vk-非ascii' }, 'INVALID_CREDENTIAL', 'VK with non-ASCII')
+
+    // A padded but otherwise legal JWT is trimmed and sent, not rejected.
+    await withCredentials({ jwt: `  ${JWT}  `, vk: ACCOUNT_VK }, async () => {
+      await withServer(gateway(), async ({ baseURL, requests }) => {
+        const adapter = adapterFor({ baseURL, modelsURL: `${baseURL}/models` })
+        await runTurn(adapter, 'model-personal')
+        const chat = requests.find((request) => request.url === '/v1/chat/completions')
+        eq('padded JWT: header carries the trimmed value', chat?.headers.authorization, `Bearer ${JWT}`)
+      })
+    })
   } finally {
     cleanup()
   }

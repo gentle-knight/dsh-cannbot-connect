@@ -295,8 +295,10 @@ node scripts/probe-vision.mjs --timeout-ms 40000
 
 ### 兼容性声明与判定规则
 
-DSH 宿主按 `engines.dsh` 与 `peerDependencies` 里的 `@deepseek-ai/dsh*` 区间判定插件是否
-兼容，**两者都必须满足**：
+DSH 宿主**只按 `engines.dsh` 判定**插件是否兼容：该字段存在时 `peerDependencies` 不参与
+判定（`dsh-app-boot` 的 `unmetRequirements` 逻辑）；只有没有 `engines.dsh` 时才逐个检查
+`@deepseek-ai/dsh*` peer。判定时 prerelease 参与区间匹配（`includePrerelease: true`），
+所以 `0.2.3-alpha.2` 落在下面的区间内：
 
 ```json
 "engines": { "dsh": ">=0.2.1-rc.2 <0.3.0" },
@@ -307,7 +309,21 @@ DSH 宿主按 `engines.dsh` 与 `peerDependencies` 里的 `@deepseek-ai/dsh*` �
 `incompatible` 并拒绝启动——**精确钉版本在宿主小版本升级时会立刻失效**，所以现在用区间。
 
 升级内核后若被判定不兼容，先确认契约是否真的变了（本插件只依赖 `LlmAdapter` 基类与
-`StreamChunk` 协议，二者在 rc.2→rc.3 间无变化），再相应放宽区间。
+`StreamChunk` 协议），再相应放宽区间。
+
+#### 0.2.3-alpha 的导入面变化（0.3.2 已适配）
+
+`@deepseek-ai/dsh-llm@0.2.3-alpha.2` 删除了 `assertUsableApiKey` 与 `normalizeApiKey`
+两个导出（官方迁移说明见 alpha 安装包的
+`docs/upgrade-guide/v0.2.2-rc.3/deepseek-request-auth/guide.md`：改用
+`@deepseek-ai/dsh-credentials` 的 `normalizeApiKey`）。但本插件同时支持 0.2.2 线，而
+0.2.2 的 `dsh-credentials` 还没有这个导出，因此插件在本地实现同一套规则
+（`trim` → 非空 → 可打印 ASCII 且不含空格），缺失凭据报 `MISSING_CREDENTIAL`、格式非法报
+`INVALID_CREDENTIAL`。`test/import-surface.mjs` 会在测试期把"导入了宿主不存在的符号"变成
+失败，`scripts/host-matrix.mjs` 会分别对 0.2.2 线与 alpha 线跑同一套离线测试。
+
+**已验证**：0.2.2-rc.3 与 0.2.3-alpha.2 上同一套离线测试全部通过；alpha 的实机激活与模型
+链路验证记录见 `docs/`（若尚未补录则为未验）。
 
 ---
 
@@ -335,8 +351,9 @@ DSH 宿主按 `engines.dsh` 与 `peerDependencies` 里的 `@deepseek-ai/dsh*` �
   `Authorization` 转发到别的源。
 - **失败文本脱敏**：网关返回的错误正文在进入诊断信息前，会按**值本身**
   （而非正则）把 JWT/VK 替换成 `[redacted]`。
-- **防头注入**：凭据经 `assertUsableApiKey()` 校验——只允许可打印 ASCII、
-  不含空格——换行之类无法进入 HTTP 头。
+- **防头注入**：凭据经插件自己的 `normalizeCredential()` 校验——只允许可打印 ASCII、
+  不含空格——换行之类无法进入 HTTP 头。该规则与旧宿主 `assertUsableApiKey` 一致，
+  在 0.2.2 与 0.2.3-alpha 两条宿主线上都成立。
 - **零运行时依赖**：不引入第三方供应链；安装期无 `postinstall`/`preinstall` 脚本。
 - **不写盘**：插件只读凭据文件，从不写回。
 
