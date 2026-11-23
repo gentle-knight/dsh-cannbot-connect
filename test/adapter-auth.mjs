@@ -77,9 +77,18 @@ function isolateCredentials() {
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, 'session.json'), JSON.stringify({ accessToken: JWT }))
   writeFileSync(join(dir, 'auth.json'), JSON.stringify({ cannbot: { key: ACCOUNT_VK } }))
+  const previousHome = { home: process.env.HOME, userProfile: process.env.USERPROFILE }
+  process.env.HOME = home
+  process.env.USERPROFILE = home
   process.env.XDG_DATA_HOME = home
   process.env.XDG_CONFIG_HOME = join(home, 'config-empty')
-  return () => rmSync(home, { recursive: true, force: true })
+  return () => {
+    if (previousHome.home === undefined) delete process.env.HOME
+    else process.env.HOME = previousHome.home
+    if (previousHome.userProfile === undefined) delete process.env.USERPROFILE
+    else process.env.USERPROFILE = previousHome.userProfile
+    rmSync(home, { recursive: true, force: true })
+  }
 }
 
 /** One SSE frame carrying `payload`. */
@@ -289,11 +298,18 @@ async function main() {
       mkdirSync(dir, { recursive: true })
       if (jwt !== undefined) writeFileSync(join(dir, 'session.json'), JSON.stringify({ accessToken: jwt }))
       if (vk !== undefined) writeFileSync(join(dir, 'auth.json'), JSON.stringify({ cannbot: { key: vk } }))
+      const previousHome = { home: process.env.HOME, userProfile: process.env.USERPROFILE }
+      process.env.HOME = home
+      process.env.USERPROFILE = home
       process.env.XDG_DATA_HOME = home
       process.env.XDG_CONFIG_HOME = join(home, 'config-empty')
       try {
         return await fn()
       } finally {
+        if (previousHome.home === undefined) delete process.env.HOME
+        else process.env.HOME = previousHome.home
+        if (previousHome.userProfile === undefined) delete process.env.USERPROFILE
+        else process.env.USERPROFILE = previousHome.userProfile
         rmSync(home, { recursive: true, force: true })
       }
     }

@@ -14,7 +14,11 @@
  * Run with `npm test`. Exits 0 when every check passes, 1 otherwise.
  */
 import { createServer } from 'node:http'
-import { CannbotAdapter, apply, readAccountVk, readJwt } from '../lib/index.js'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+import { CannbotAdapter, apply } from '../lib/index.js'
 
 let failures = 0
 const fail = (message) => {
@@ -24,6 +28,40 @@ const fail = (message) => {
 const ok = (message) => console.log(`ok   ${message}`)
 
 const silentLogger = { info: () => {}, warn: () => {}, error: () => {} }
+
+// ── isolated credential fixture ─────────────────────────────────────────────
+//
+// These checks must never read the machine's real CANNWork sign-in: a test that
+// prints or forwards a real token is a security defect of the test itself. The
+// fake JWT/VK are also what the gateway echo below is asserted to redact.
+const FAKE_JWT = 'test-jwt-0123456789abcdef'
+const FAKE_VK = 'vk-test-0123456789abcdef'
+const fixtureHome = mkdtempSync(join(tmpdir(), 'dsh-cannbot-security-'))
+mkdirSync(join(fixtureHome, 'data', 'opencode'), { recursive: true })
+mkdirSync(join(fixtureHome, 'config', 'opencode'), { recursive: true })
+writeFileSync(join(fixtureHome, 'data', 'opencode', 'session.json'), JSON.stringify({ accessToken: FAKE_JWT }))
+writeFileSync(join(fixtureHome, 'config', 'opencode', 'auth.json'), JSON.stringify({ cannbot: { key: FAKE_VK } }))
+const previousHome = {
+  home: process.env.HOME,
+  userProfile: process.env.USERPROFILE,
+  data: process.env.XDG_DATA_HOME,
+  config: process.env.XDG_CONFIG_HOME,
+}
+process.env.HOME = fixtureHome
+process.env.USERPROFILE = fixtureHome
+process.env.XDG_DATA_HOME = join(fixtureHome, 'data')
+process.env.XDG_CONFIG_HOME = join(fixtureHome, 'config')
+const cleanupFixture = () => {
+  if (previousHome.home === undefined) delete process.env.HOME
+  else process.env.HOME = previousHome.home
+  if (previousHome.userProfile === undefined) delete process.env.USERPROFILE
+  else process.env.USERPROFILE = previousHome.userProfile
+  if (previousHome.data === undefined) delete process.env.XDG_DATA_HOME
+  else process.env.XDG_DATA_HOME = previousHome.data
+  if (previousHome.config === undefined) delete process.env.XDG_CONFIG_HOME
+  else process.env.XDG_CONFIG_HOME = previousHome.config
+  rmSync(fixtureHome, { recursive: true, force: true })
+}
 
 /** A context stub sufficient to call `apply()` without a real Cordis host. */
 function stubContext() {
@@ -76,12 +114,10 @@ async function startServer(handler) {
   }
 }
 
-const jwt = readJwt()
-const vk = readAccountVk()
+const jwt = FAKE_JWT
+const vk = FAKE_VK
 
-if (jwt === undefined || vk === undefined) {
-  console.log('skip credential-dependent checks (CANNWork sign-in not present)')
-} else {
+{
   // The redirect target records whether it was ever contacted at all.
   const target = await startServer((_req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' })
@@ -176,6 +212,8 @@ if (jwt === undefined || vk === undefined) {
     ok('credential material is redacted out of provider failure text')
   }
 }
+
+cleanupFixture()
 
 if (failures > 0) {
   console.error(`\nFAIL: ${failures} check(s) failed.`)

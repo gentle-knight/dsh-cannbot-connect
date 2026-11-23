@@ -49,9 +49,16 @@ async function withRoots({ data = {}, config = {} }, fn) {
   for (const [name, value] of Object.entries(config)) {
     writeFileSync(join(configRoot, 'opencode', name), typeof value === 'string' ? value : JSON.stringify(value))
   }
-  const previous = { data: process.env.XDG_DATA_HOME, config: process.env.XDG_CONFIG_HOME }
+  const previous = {
+    data: process.env.XDG_DATA_HOME,
+    config: process.env.XDG_CONFIG_HOME,
+    home: process.env.HOME,
+    userProfile: process.env.USERPROFILE,
+  }
   process.env.XDG_DATA_HOME = dataRoot
   process.env.XDG_CONFIG_HOME = configRoot
+  process.env.HOME = home
+  process.env.USERPROFILE = home
   try {
     return await fn({ home, dataRoot, configRoot })
   } finally {
@@ -59,6 +66,10 @@ async function withRoots({ data = {}, config = {} }, fn) {
     else process.env.XDG_DATA_HOME = previous.data
     if (previous.config === undefined) delete process.env.XDG_CONFIG_HOME
     else process.env.XDG_CONFIG_HOME = previous.config
+    if (previous.home === undefined) delete process.env.HOME
+    else process.env.HOME = previous.home
+    if (previous.userProfile === undefined) delete process.env.USERPROFILE
+    else process.env.USERPROFILE = previous.userProfile
     rmSync(home, { recursive: true, force: true })
   }
 }
@@ -101,6 +112,15 @@ await withRoots(
   },
 )
 
+await withRoots({ data: { 'session.json': '{not json' } }, () => {
+  eq('an unparseable session.json reads as absent', readJwt(), undefined)
+})
+
+await withRoots({}, async ({ dataRoot }) => {
+  mkdirSync(join(dataRoot, 'opencode', 'session.json'))
+  eq('a directory named session.json reads as absent', readJwt(), undefined)
+})
+
 // ── JWT lookup order and parsing ────────────────────────────────────────────
 const expiredJwt = makeJwt({ exp: 1_700_000_000, sub: 'a' })
 const liveJwt = makeJwt({ exp: 4_000_000_000, sub: 'b' })
@@ -111,12 +131,12 @@ await withRoots(
     config: { 'session.json': { accessToken: expiredJwt } },
   },
   () => {
-    eq('the data-dir JWT is preferred', readJwt(), liveJwt)
+    eq('the data-dir JWT is preferred', readJwt() === liveJwt, true)
   },
 )
 
 await withRoots({ data: { 'session.json': { accessToken: '' } }, config: { 'session.json': { accessToken: liveJwt } } }, () => {
-  eq('an empty data-dir token falls through to the config dir', readJwt(), liveJwt)
+  eq('an empty data-dir token falls through to the config dir', readJwt() === liveJwt, true)
 })
 
 eq('a JWT expiry is decoded', jwtExpiresAt(liveJwt), 4_000_000_000 * 1000)

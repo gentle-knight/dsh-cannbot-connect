@@ -81,17 +81,23 @@ dsh plugin --profile desktop add file:$(pwd)/dsh-cannbot-connect
 
 ```bash
 npm install
-npm test              # 全部离线脚本：导入面 / Config / 清单 / 插件契约 / wire / 错误 / 安全 / usage / 凭据 / 图片
-npm run test:compat   # 同一套离线脚本分别跑 0.2.2-rc.3 与 0.2.3-alpha.2 两条宿主线
-npm run check         # 上面两项 + 密钥扫描（commit 前跑）
+npm test              # 17 组离线脚本，不需要网络与真实凭据
+npm run test:compat   # 同一套脚本跑 0.2.2-rc.3 与 0.2.3-alpha.2 两条宿主线
+npm run test:coverage # V8 覆盖率 + 门槛（当前 100% 行 / 92.63% 函数）
+npm run check         # 语法 + 离线测试 + 宿主矩阵 + 覆盖率 + 密钥扫描
 ```
+
+测试策略、分层、覆盖率口径与退出标准见
+[`docs/TEST-PLAN.md`](docs/TEST-PLAN.md)；Linux/macOS/Windows 的依赖差异与风险见
+[`docs/PLATFORMS.md`](docs/PLATFORMS.md)。测试入口全部是 Node 脚本，
+`npm run check` 在三个平台上都不依赖 shell 语法。
 
 `test:compat` 通过 `scripts/host-matrix.mjs` 为每条宿主线建一个临时包根，复制 `lib/` 与
 `test/`、链接该宿主自己的 `@deepseek-ai/*` 包后再跑。它存在的直接原因：alpha 删除了
 `assertUsableApiKey`，而仓库默认的 `node_modules` 只指向一条宿主线；没有矩阵时，
 这类"导入面删除"只能在激活日志里看到。
 
-与真实网关的端到端验证需要 CANNWork 已登录：
+与真实网关的端到端验证需要 CANNWork 已登录（会消耗额度）：
 
 ```bash
 node e2e.mjs
@@ -229,6 +235,22 @@ DSH 的消息词汇只有 `text` 与 `image` 两种模态；适配器能决定�
 > DSH profile 使用 `nodeLinker: hoisted` + `autoInstallPeers: false`，
 > 所以 `peerDependencies` 不会被装进 profile，只在运行时向宿主解析。
 > 实测：`dsh plugin add` 只新增 **1 个包**（插件自己）。
+
+### 6.1 平台依赖与兼容性
+
+插件是纯 ESM JavaScript：**没有原生模块、没有安装脚本、运行时不起子进程/本地服务**。
+平台差异只落在两处：
+
+1. **凭据文件位置**：当前 CANNWork/opencode 在三个平台都用
+   `~/.local/share/opencode`（JWT）与 `~/.config/opencode`（VK）；插件同时支持
+   `XDG_*` 覆盖，并把 macOS `~/Library/...`、Windows `%LOCALAPPDATA%`/`%APPDATA%`
+   作为 opencode 未来迁移的兜底。顺序与风险见 [`docs/PLATFORMS.md`](docs/PLATFORMS.md)。
+2. **开发脚本**：`npm test` / `npm run check` 由 Node 驱动，不依赖 `&&` 或 `sh`；
+   `check-secrets.sh` 只是 POSIX 包装，canonical 实现是 `scripts/check-secrets.mjs`。
+
+当前只在 Linux 实机验证；macOS/Windows 的路径候选通过注入 `platform`/`env`/`home`
+的单元测试覆盖，路径分隔符、ACL、长路径等未实机执行，已在 `docs/PLATFORMS.md`
+的风险表中列明。
 
 ---
 
@@ -417,9 +439,10 @@ DSH 宿主**只按 `engines.dsh` 判定**插件是否兼容：该字段存在时
 ### 9.3 回归测试
 
 ```bash
-npm test              # 全部离线脚本，不需要 CANNBOT 登录
+npm test              # 17 组离线脚本，不需要 CANNBOT 登录
 npm run test:compat   # 同一套脚本跑 0.2.2-rc.3 与 0.2.3-alpha.2 两条宿主线
-npm run check         # 上面两项 + 密钥扫描
+npm run test:coverage # 覆盖率门槛：行 ≥98%、函数 ≥90%（当前 100% / 92.63%）
+npm run check         # 语法 + 离线测试 + 宿主矩阵 + 覆盖率 + 密钥扫描
 node e2e.mjs          # 实网端到端（需 CANNWork 登录，消耗额度）
 ```
 
@@ -431,10 +454,13 @@ node e2e.mjs          # 实网端到端（需 CANNWork 登录，消耗额度）
 | `plugin.mjs` | `apply` 注册 `cannbot`、返回 disposer、非法端点挂载期拒绝、无 `ctx.effect` 仍可挂载 |
 | `wire.mjs` | 消息/工具/请求体 golden（含 reasoning 与 tool_calls）、SSE 分帧（CRLF/comment/`[DONE]`/尾帧） |
 | `errors.mjs` | 401/403 模型/429/5xx/413/图片 400/上下文/配额 分类、Retry-After 秒与 HTTP-date、脱敏、端点校验 |
-| `credentials.mjs` | 配置目录优先的 VK、legacy 回退、JWT 过期解码、`authStatus` 不含值、头注入规则 |
+| `credentials.mjs` | 配置目录优先的 VK、legacy 回退、JWT 过期解码、`authStatus` 不含值、头注入规则、坏 JSON/BOM |
+| `credentials-platform.mjs` | Linux/macOS/Windows 候选顺序、env-paths 兜底、BOM、模拟 home 读取 |
 | `catalog.mjs` | 挂载拉取、并发单飞行、定时刷新、失败保留、`refreshSoon` 冷却、dispose 停止 |
-| `adapter-meta.mjs` | `listModels`/`resolveModel`（context 取整、`defaultMaxTokens`）、图片计数/字节预算、file block 拒绝 |
+| `catalog-fetch.mjs` | 401/500/空名册/坏 JSON/网络失败、loader 抛错、dispose 后 refresh/refreshSoon |
+| `adapter-meta.mjs` | `listModels`/`resolveModel`（context 取整、`defaultMaxTokens`）、图片计数/字节预算、file block 拒绝、未准备图片的不变式 |
 | `adapter-finish.mjs` | `content_filter`/未知 finish → `INVALID_RESPONSE`、空响应、坏工具 JSON、流内 429 status |
+| `adapter-contract.mjs` | `providerInfo`/`providerRetryPolicy`/`catalog`、无 body 的 200、STREAM_CLOSED、无 status 的流内错、reasoning 分帧、空/截断工具参数、403 触发目录重试 |
 | `security.mjs` | 明文端点拒绝、回环例外、重定向不外传凭据、失败文本脱敏 |
 | `adapter-usage.mjs` | 网关 `prompt_tokens` 含缓存命中 → 内核 DISJOINT 三桶，含宿主 `normalizeUsage` gate |
 | `adapter-auth.mjs` | 逐模型 VK 优先级、401/403 分类、凭据脱敏、缺失/格式非法凭据 |
@@ -449,7 +475,10 @@ node e2e.mjs          # 实网端到端（需 CANNWork 登录，消耗额度）
 - VK / JWT 不进仓库、不进日志、不进 git 历史
 - `.gitignore` 排除 `node_modules/` 与本地验证产物
 - `e2e.mjs` 只打印 `present` / `MISSING`
-- `check-secrets.sh` 同时扫描工作区与 git 历史，推送前可跑
+- `scripts/check-secrets.mjs` 同时扫描工作区（含未跟踪文件）与 git 历史；`check-secrets.sh`
+  只是 POSIX 包装，Windows 上 `npm run check:secrets` 直接可用
+- `scripts/coverage.mjs` 用 Node 内置的 `NODE_V8_COVERAGE` 统计，不引入 c8/nyc；覆盖率是
+  V8 块范围投影到行/函数，**不声称分支覆盖率**（口径见 `docs/TEST-PLAN.md` §5）
 
 ### 9.5 残留风险（如实说明）
 

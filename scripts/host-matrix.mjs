@@ -30,39 +30,31 @@ const args = new Set(process.argv.slice(2))
 const requireAll = args.has('--require-all')
 const live = args.has('--live')
 
-/** Host install roots; each must contain `node_modules/@deepseek-ai`. */
+/**
+ * Host install roots; each must contain `node_modules/@deepseek-ai`.
+ *
+ * `DSH_INSTALL_DIR` is set by a profile-launched Harness on every platform, so
+ * a developer on macOS or Windows can run the matrix against the host they are
+ * already using. The Linux paths are only fallbacks for this checkout; a host
+ * that is absent is skipped, and `--require-all` turns that into a failure.
+ */
+const LINUX_STABLE = '/home/developer/.nvm/versions/node/v24.22.3/lib/node_modules/@deepseek-ai/dsh'
+const LINUX_ALPHA = '/home/developer/agent/workspace/dsh-alpha'
+const usable = (root) => root !== undefined && existsSync(join(root, 'node_modules', '@deepseek-ai', 'dsh-llm'))
 const HOSTS = [
   {
     name: 'stable',
     label: '0.2.2-rc.3',
-    root:
-      process.env.CANNBOT_HOST_STABLE ??
-      '/home/developer/.nvm/versions/node/v24.22.3/lib/node_modules/@deepseek-ai/dsh',
+    root: process.env.CANNBOT_HOST_STABLE ?? (usable(process.env.DSH_INSTALL_DIR) ? process.env.DSH_INSTALL_DIR : undefined) ?? (existsSync(LINUX_STABLE) ? LINUX_STABLE : undefined),
   },
   {
     name: 'alpha',
     label: '0.2.3-alpha.2',
-    root: process.env.CANNBOT_HOST_ALPHA ?? '/home/developer/agent/workspace/dsh-alpha',
+    root: process.env.CANNBOT_HOST_ALPHA ?? (existsSync(LINUX_ALPHA) ? LINUX_ALPHA : undefined),
   },
 ]
 
-/** Offline scripts, in the order `npm test` runs them. */
-const OFFLINE_TESTS = [
-  'test/import-surface.mjs',
-  'test/config.mjs',
-  'test/manifest.mjs',
-  'test/plugin.mjs',
-  'test/wire.mjs',
-  'test/errors.mjs',
-  'test/credentials.mjs',
-  'test/catalog.mjs',
-  'test/adapter-meta.mjs',
-  'test/adapter-finish.mjs',
-  'test/security.mjs',
-  'test/adapter-usage.mjs',
-  'test/adapter-auth.mjs',
-  'test/adapter-image.mjs',
-]
+import { LIVE_TEST, OFFLINE_TESTS } from './test-suites.mjs'
 
 /** Packages every host must provide for the offline suite. */
 const HOST_PACKAGES = ['cordis', 'dsh-llm', 'schemastery']
@@ -82,6 +74,7 @@ function versionOf(hostModules, name) {
 
 /** Copy the plugin sources into one throwaway package root for a host. */
 function stageHost(host) {
+  if (host.root === undefined) return { problem: 'no host root; set CANNBOT_HOST_STABLE / CANNBOT_HOST_ALPHA (or run under a profile so DSH_INSTALL_DIR is set)' }
   const hostModules = join(host.root, 'node_modules', '@deepseek-ai')
   const missing = HOST_PACKAGES.filter((name) => !existsSync(join(hostModules, name)))
   if (missing.length > 0) return { problem: `missing packages: ${missing.join(', ')}` }
@@ -127,8 +120,8 @@ function runScript(dir, script, host) {
 }
 
 for (const host of HOSTS) {
-  const version = versionOf(join(host.root, 'node_modules', '@deepseek-ai'), 'dsh-llm')
-  console.log(`\n== ${host.name} (${version ?? host.label}) — ${host.root}`)
+  const version = host.root === undefined ? undefined : versionOf(join(host.root, 'node_modules', '@deepseek-ai'), 'dsh-llm')
+  console.log(`\n== ${host.name} (${version ?? host.label}) — ${host.root ?? 'unset'}`)
   const staged = stageHost(host)
   if (staged.problem !== undefined) {
     skipped.push(`${host.name}: ${staged.problem}`)
@@ -143,18 +136,18 @@ for (const host of HOSTS) {
     if (!runScript(staged.dir, script, host)) hostFailed = true
   }
   if (live) {
-    const result = spawnSync(process.execPath, ['e2e.mjs'], {
+    const result = spawnSync(process.execPath, [LIVE_TEST], {
       cwd: staged.dir,
       encoding: 'utf8',
       env: { ...process.env, DSH_MATRIX_HOST: host.name },
       timeout: 240_000,
     })
     if (result.status === 0) {
-      console.log('  ok   e2e.mjs (live)')
+      console.log(`  ok   ${LIVE_TEST} (live)`)
     } else {
       hostFailed = true
       failed = true
-      console.error(`  FAIL e2e.mjs (exit ${result.status})`)
+      console.error(`  FAIL ${LIVE_TEST} (exit ${result.status})`)
       console.error((result.stdout ?? '').split('\n').slice(-12).map((line) => `       ${line}`).join('\n'))
     }
   }

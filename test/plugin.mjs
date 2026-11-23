@@ -7,7 +7,8 @@
  * mount instead of on the first request, and a profile without the attachment
  * or effect APIs still mounts.
  */
-import { mkdtempSync, mkdirSync, rmSync } from 'node:fs'
+import { createServer } from 'node:http'
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -34,9 +35,18 @@ const check = (label, predicate, detail) => {
 function isolateCredentials() {
   const home = mkdtempSync(join(tmpdir(), 'dsh-cannbot-plugin-'))
   mkdirSync(join(home, 'opencode'), { recursive: true })
+  const previousHome = { home: process.env.HOME, userProfile: process.env.USERPROFILE }
+  process.env.HOME = home
+  process.env.USERPROFILE = home
   process.env.XDG_DATA_HOME = home
   process.env.XDG_CONFIG_HOME = join(home, 'config-empty')
-  return () => rmSync(home, { recursive: true, force: true })
+  return () => {
+    if (previousHome.home === undefined) delete process.env.HOME
+    else process.env.HOME = previousHome.home
+    if (previousHome.userProfile === undefined) delete process.env.USERPROFILE
+    else process.env.USERPROFILE = previousHome.userProfile
+    rmSync(home, { recursive: true, force: true })
+  }
 }
 
 /** A Cordis context with only what `apply` reads. */
@@ -118,6 +128,78 @@ try {
     const returned = apply(ctx, Config({ baseURL: 'http://127.0.0.1:9/v1', modelsURL: 'http://127.0.0.1:9/models' }))
     eq('apply without ctx.effect registers the route', registrations.length, 1)
     check('apply without ctx.effect still returns the disposer', typeof returned === 'function')
+  }
+
+
+  // ── a successful roster notifies both catalog events ─────────────────────
+  {
+    const roster = {
+      success: true,
+      data: {
+        personalModels: [
+          { model: 'model-a', title: 'Model A', apiKey: 'vk-model-a', contextLength: 1_000 },
+          { model: 'model-b', title: 'Model B', contextLength: 2_000 },
+        ],
+        builtinModels: [],
+      },
+    }
+    const server = createServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify(roster))
+    })
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const { port } = server.address()
+    // The isolated fixture has no sign-in; give it one so fetchCatalog runs.
+    writeFileSync(
+      join(process.env.XDG_DATA_HOME, 'opencode', 'session.json'),
+      JSON.stringify({ accessToken: 'test-jwt-plugin-0123456789abcdef' }),
+    )
+    try {
+      const { ctx, calls, registrations } = stubContext()
+      apply(ctx, Config({ baseURL: `http://127.0.0.1:${port}/v1`, modelsURL: `http://127.0.0.1:${port}/models` }))
+      await new Promise((resolve) => setTimeout(resolve, 300))
+      check(
+        'a successful roster is logged with its model count',
+        calls.info.some(([line]) => /2 models available/.test(line)),
+        JSON.stringify(calls.info),
+      )
+      check(
+        'the topology event is emitted',
+        calls.emit.some((args) => args[0] === 'llm/adapters-updated'),
+      )
+      check(
+        'the catalog event names the provider',
+        calls.emit.some((args) => args[0] === 'llm/models-updated' && args[1] === PROVIDER),
+      )
+      const models = await registrations[0].adapter.listModels(PROVIDER)
+      eq('the registered adapter adopted the roster', models.length, 2)
+      for (const disposer of calls.effects) disposer?.()
+    } finally {
+      await new Promise((resolve) => {
+        server.closeAllConnections?.()
+        server.close(resolve)
+      })
+    }
+  }
+
+  // ── an expired JWT is warned about at mount ───────────────────────────────
+  {
+    const expired = (() => {
+      const encode = (value) => Buffer.from(JSON.stringify(value)).toString('base64url')
+      return `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode({ exp: 1 })}.not-a-signature`
+    })()
+    writeFileSync(
+      join(process.env.XDG_DATA_HOME, 'opencode', 'session.json'),
+      JSON.stringify({ accessToken: expired }),
+    )
+    const { ctx, calls } = stubContext()
+    apply(ctx, Config({ baseURL: 'http://127.0.0.1:9/v1', modelsURL: 'http://127.0.0.1:9/models' }))
+    check(
+      'an expired JWT is reported with a re-sign-in hint',
+      calls.warn.some(([line]) => /access token is expired/.test(line)),
+      JSON.stringify(calls.warn),
+    )
+    for (const disposer of calls.effects) disposer?.()
   }
 
   // ── catalog probing happens after mount and never blocks it ──────────────

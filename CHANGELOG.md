@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.4.1
+
+- Resolve credentials from platform-specific candidates: the home layout stays
+  first (that is what CANNWork writes today), with macOS `~/Library/...` and
+  Windows `%LOCALAPPDATA%`/`%APPDATA%` `env-paths` locations appended as
+  fallbacks, and a UTF-8 BOM stripped before parsing. `authStatus()` reports the
+  label of the root it used.
+- Fix 403 model-refusal classification for dotted model ids (`deepseek-v4.1-flash`);
+  the old sentence-boundary regex treated the dot as the end of the sentence and
+  reported `AUTH`.
+- Add the test programme: `docs/TEST-PLAN.md`, `docs/PLATFORMS.md`, a shared
+  suite list, a Node test runner, a Node secret scanner (the POSIX wrapper now
+  delegates), a syntax checker, and a dependency-free V8 coverage gate
+  (lines ≥98 %, functions ≥90 %). Current result: 100 % lines, 92.63 %
+  functions across 17 offline suites.
+- Make the host matrix platform-neutral (`DSH_INSTALL_DIR` or explicit
+  `CANNBOT_HOST_*`) and read the suite list from one place.
+- Add regression suites for platform credential candidates, roster HTTP/store
+  failures, adapter registration/forced stream branches, BOM/invalid JSON, and
+  image-without-prepared-version; isolate every offline test from the real
+  `HOME`/`USERPROFILE`/XDG state.
+
 ## 0.4.0
 
 - Split the single adapter file into `lib/` modules (`config`, `credentials`,

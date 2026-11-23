@@ -9,7 +9,7 @@
  */
 import { Config } from '../lib/config.js'
 import { CannbotAdapter } from '../lib/adapter.js'
-import { prepareImages } from '../lib/images.js'
+import { prepareImages, toContent } from '../lib/images.js'
 import { toMessages } from '../lib/wire.js'
 
 let failures = 0
@@ -152,6 +152,21 @@ const fileBlockError = (() => {
 })()
 eq('a file block reaching the wire is refused', fileBlockError?.code, 'UNSUPPORTED_CONTENT')
 check('the file refusal explains the host projection', /projects file attachments to text handles/.test(fileBlockError?.message ?? ''))
+
+// ── an unprepared image reference is an internal invariant violation ───────
+const missingVersion = (() => {
+  try {
+    toContent(
+      [{ type: 'image', attachment: { attachmentId: 'missing', name: 'missing.png' } }],
+      { versions: new Map(), accessOf: () => undefined },
+    )
+    return undefined
+  } catch (error) {
+    return error
+  }
+})()
+eq('an image without a prepared request version is refused', missingVersion?.code, 'UNSUPPORTED_CONTENT')
+check('the refusal names the attachment', /missing\.png/.test(missingVersion?.message ?? ''))
 
 // ── a text-only model refuses an image before serialization ────────────────
 let textOnlyError

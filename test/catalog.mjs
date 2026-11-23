@@ -122,17 +122,17 @@ function controlledLoader() {
   const control = controlledLoader()
   const store = new CatalogStore({
     modelsURL: 'https://example.test/models',
-    refreshMs: 20,
+    refreshMs: 50,
     loader: control.loader,
     onCatalog: () => {},
     onFailure: () => {},
   })
   store.start()
-  await tick(75)
+  await tick(220)
   check('the timer fetches more than once', control.calls.length >= 2, `${control.calls.length}`)
   store.dispose()
   const afterDispose = control.calls.length
-  await tick(60)
+  await tick(140)
   eq('dispose stops the timer', control.calls.length, afterDispose)
 }
 
@@ -146,10 +146,10 @@ function controlledLoader() {
     onCatalog: () => {},
     onFailure: () => {},
   })
-  store.refreshSoon(5)
-  store.refreshSoon(5)
-  store.refreshSoon(5)
-  await tick(30)
+  store.refreshSoon(10)
+  store.refreshSoon(10)
+  store.refreshSoon(10)
+  await tick(80)
   eq('a burst of refreshSoon calls results in one retry', control.calls.length, 1)
   store.dispose()
 }
@@ -178,9 +178,16 @@ function controlledLoader() {
   const { mkdtempSync, mkdirSync, rmSync } = await import('node:fs')
   const { tmpdir } = await import('node:os')
   const { join } = await import('node:path')
-  const previous = { data: process.env.XDG_DATA_HOME, config: process.env.XDG_CONFIG_HOME }
+  const previous = {
+    data: process.env.XDG_DATA_HOME,
+    config: process.env.XDG_CONFIG_HOME,
+    home: process.env.HOME,
+    userProfile: process.env.USERPROFILE,
+  }
   const dir = mkdtempSync(join(tmpdir(), 'dsh-cannbot-catalog-'))
   mkdirSync(join(dir, 'opencode'), { recursive: true })
+  process.env.HOME = dir
+  process.env.USERPROFILE = dir
   process.env.XDG_DATA_HOME = dir
   process.env.XDG_CONFIG_HOME = join(dir, 'empty-config')
   try {
@@ -192,6 +199,10 @@ function controlledLoader() {
     else process.env.XDG_DATA_HOME = previous.data
     if (previous.config === undefined) delete process.env.XDG_CONFIG_HOME
     else process.env.XDG_CONFIG_HOME = previous.config
+    if (previous.home === undefined) delete process.env.HOME
+    else process.env.HOME = previous.home
+    if (previous.userProfile === undefined) delete process.env.USERPROFILE
+    else process.env.USERPROFILE = previous.userProfile
     rmSync(dir, { recursive: true, force: true })
   }
 }

@@ -38,6 +38,11 @@ eq(
   'MODEL_UNSUPPORTED',
 )
 eq(
+  '403 naming a dotted model id is an entitlement failure',
+  failure(403, 'Model deepseek-v4.1-flash not allowed').code,
+  'MODEL_UNSUPPORTED',
+)
+eq(
   '403 with unsupported-model wording is an entitlement failure',
   failure(403, 'this model is unsupported on this route').code,
   'MODEL_UNSUPPORTED',

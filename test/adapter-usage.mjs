@@ -113,8 +113,22 @@ function isolateCredentials() {
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, 'session.json'), JSON.stringify({ accessToken: JWT }))
   writeFileSync(join(dir, 'auth.json'), JSON.stringify({ cannbot: { key: VK } }))
+  const previous = { home: process.env.HOME, userProfile: process.env.USERPROFILE, data: process.env.XDG_DATA_HOME, config: process.env.XDG_CONFIG_HOME }
+  process.env.HOME = home
+  process.env.USERPROFILE = home
   process.env.XDG_DATA_HOME = home
-  return () => rmSync(home, { recursive: true, force: true })
+  process.env.XDG_CONFIG_HOME = join(home, 'config-empty')
+  return () => {
+    if (previous.home === undefined) delete process.env.HOME
+    else process.env.HOME = previous.home
+    if (previous.userProfile === undefined) delete process.env.USERPROFILE
+    else process.env.USERPROFILE = previous.userProfile
+    if (previous.data === undefined) delete process.env.XDG_DATA_HOME
+    else process.env.XDG_DATA_HOME = previous.data
+    if (previous.config === undefined) delete process.env.XDG_CONFIG_HOME
+    else process.env.XDG_CONFIG_HOME = previous.config
+    rmSync(home, { recursive: true, force: true })
+  }
 }
 
 /** One SSE frame carrying `payload`. */

@@ -1,6 +1,6 @@
 {
   "name": "dsh-cannbot-connect",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Bring CANNBOT gateway models into DeepSeek Harness by reusing CANNWork's opencode sign-in, with a live model roster and measured per-model image support.",
   "type": "module",
   "main": "lib/index.js",
@@ -18,7 +18,8 @@
     "LICENSE",
     "locale/*.json",
     "icon.svg",
-    "docs"
+    "docs",
+    "CHANGELOG.md"
   ],
   "dsh": {
     "bundle": {
@@ -30,10 +31,12 @@
     "dsh": ">=0.2.2-rc.3 <0.3.0"
   },
   "scripts": {
-    "test": "node test/import-surface.mjs && node test/config.mjs && node test/manifest.mjs && node test/plugin.mjs && node test/wire.mjs && node test/errors.mjs && node test/credentials.mjs && node test/catalog.mjs && node test/adapter-meta.mjs && node test/adapter-finish.mjs && node test/security.mjs && node test/adapter-usage.mjs && node test/adapter-auth.mjs && node test/adapter-image.mjs",
+    "test": "node scripts/run-tests.mjs",
     "test:compat": "node scripts/host-matrix.mjs",
+    "test:coverage": "node scripts/coverage.mjs",
     "test:e2e": "node e2e.mjs",
-    "check": "npm test && node scripts/host-matrix.mjs && ./check-secrets.sh"
+    "check:secrets": "node scripts/check-secrets.mjs",
+    "check": "node scripts/check-syntax.mjs && npm test && npm run test:compat && npm run test:coverage && npm run check:secrets"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.1.0",
