@@ -91,6 +91,8 @@ window.__ModuleLoader__.load({
         'field.imageOffloadCountQuantum': '超限降级步长',
         'hint.catalogRefreshMs': '0 表示关闭定时刷新；仍可手动刷新。',
         'hint.streamIdleTimeoutMs': '一次上游读取允许的最长空闲时间。',
+        'hint.defaultContextWindow': '目录没有提供上下文长度时使用的兜底值。',
+        'hint.defaultMaxTokens': '目录没有提供输出上限时使用的兜底值。',
         'hint.requestImagePixelBudget': '等比缩放后的像素上限，不会放大图片。',
         'hint.requestImageMaxBytes': '单张图片编码后的字节目标。',
         'hint.maxRequestImageBytes': '累计 base64 图片超出时，DSH 会把最旧图片替换为占位文本。',
@@ -184,6 +186,8 @@ window.__ModuleLoader__.load({
         'field.imageOffloadCountQuantum': 'Overflow offload step',
         'hint.catalogRefreshMs': '0 disables the timer; manual refresh still works.',
         'hint.streamIdleTimeoutMs': 'Longest idle time allowed for one upstream read.',
+        'hint.defaultContextWindow': 'Fallback when the catalog does not provide a context window.',
+        'hint.defaultMaxTokens': 'Fallback when the catalog does not provide an output cap.',
         'hint.requestImagePixelBudget': 'Pixel cap after proportional scaling; images are never enlarged.',
         'hint.requestImageMaxBytes': 'Encoded-byte target for one image.',
         'hint.maxRequestImageBytes': 'When accumulated base64 images exceed this, DSH replaces the oldest images with placeholders.',
@@ -261,6 +265,8 @@ window.__ModuleLoader__.load({
       .cannbot-table th { color:var(--dsw-alias-label-secondary); font-weight:500; background:var(--dsw-alias-bg-module-platform); }
       .cannbot-table tr:last-child td { border-bottom:0; }
       .cannbot-mono { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:11px; }
+      .cannbot-endpoint { display:block; min-width:0; max-width:100%; overflow-wrap:anywhere; word-break:break-word; }
+      .cannbot-connectionGrid { grid-template-columns: repeat(auto-fit,minmax(280px,1fr)); }
       .cannbot-check { width:16px; height:16px; accent-color:var(--dsw-alias-state-business-primary); }
       .cannbot-inline { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
       .cannbot-tags { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
@@ -754,13 +760,13 @@ window.__ModuleLoader__.load({
       const connectionCard = h(Card, {
         title: t('section.connection'),
         hint: t('connection.readOnly'),
-      }, h('div', { className: 'cannbot-grid' },
+      }, h('div', { className: 'cannbot-grid cannbot-connectionGrid' },
         h('div', { className: 'cannbot-field' },
           h('span', { className: 'cannbot-label' }, t('connection.baseURL')),
-          h('span', { className: 'cannbot-mono' }, value.baseURL ?? '—')),
+          h('span', { className: 'cannbot-mono cannbot-endpoint' }, value.baseURL ?? '—')),
         h('div', { className: 'cannbot-field' },
           h('span', { className: 'cannbot-label' }, t('connection.modelsURL')),
-          h('span', { className: 'cannbot-mono' }, value.modelsURL ?? '—'))))
+          h('span', { className: 'cannbot-mono cannbot-endpoint' }, value.modelsURL ?? '—'))))
 
       const header = h('header', { className: 'cannbot-header' },
         h('div', null,
