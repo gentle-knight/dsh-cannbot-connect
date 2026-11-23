@@ -8,6 +8,7 @@
  * attachment store.
  */
 import { Config } from '../lib/config.js'
+import { readConfig } from '../lib/config-runtime.js'
 import { CannbotAdapter } from '../lib/adapter.js'
 import { prepareImages, toContent } from '../lib/images.js'
 import { toMessages } from '../lib/wire.js'
@@ -37,6 +38,7 @@ const CATALOG = [
 ]
 
 const config = Config({ visionModels: ['vision-model'] })
+const plain = readConfig(config)
 const adapter = new CannbotAdapter(config)
 adapter.adoptCatalog(CATALOG)
 
@@ -64,15 +66,15 @@ eq('a model without maxTokens is capped by its own context', text.defaultMaxToke
 eq('a text model advertises text only', text.inputModalities, ['text'])
 
 const unsized = await adapter.resolveModel('cannbot', 'unsized-model')
-eq('a model the catalog did not size uses the configured context', unsized.context?.contextWindow, config.defaultContextWindow)
+eq('a model the catalog did not size uses the configured context', unsized.context?.contextWindow, plain.defaultContextWindow)
 eq('an unknown model still resolves its id', unsized.id, 'unsized-model')
 
 // ── imageRequestTarget ──────────────────────────────────────────────────────
 const target = adapter.imageRequestTarget('cannbot', 'vision-model', { width: 4096, height: 4096 })
-check('an oversized image is scaled inside the pixel budget', target.width * target.height <= config.requestImagePixelBudget)
-check('the target carries the legacy encoded-byte cap', target.maxBytes === config.requestImageMaxBytes)
-check('the target carries the 0.2.3 encoded-byte cap', target.maxImageBytes === config.requestImageMaxBytes)
-check('the target carries the 0.2.3 preferred target', target.imageTargetBytes === config.requestImageMaxBytes)
+check('an oversized image is scaled inside the pixel budget', target.width * target.height <= plain.requestImagePixelBudget)
+check('the target carries the legacy encoded-byte cap', target.maxBytes === plain.requestImageMaxBytes)
+check('the target carries the 0.2.3 encoded-byte cap', target.maxImageBytes === plain.requestImageMaxBytes)
+check('the target carries the 0.2.3 preferred target', target.imageTargetBytes === plain.requestImageMaxBytes)
 const small = adapter.imageRequestTarget('cannbot', 'vision-model', { width: 32, height: 16 })
 eq('a small image is not enlarged', [small.width, small.height], [32, 16])
 

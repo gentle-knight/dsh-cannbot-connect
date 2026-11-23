@@ -1,6 +1,7 @@
 # 手动安装与挂载
 
 通常只需要 README 的安装命令。本文覆盖 CLI 不可用、特殊 profile、以及手动编辑 patch 的场景。
+安装并重启后，打开 **设置 → CANNBOT** 即可使用完整配置页；Models 页底部的 CANNBOT 卡片也是同一入口。
 
 把插件加进 profile 的 `package.json` 依赖与 bundles，再在
 `cordis.patch.yml` 里声明：

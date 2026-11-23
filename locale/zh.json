@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "CANNBOT Connect",
-    "description": "复用 CANNWork 已为 opencode 建立的登录态，把 CANNBOT 网关的对话模型接入 DSH：不需要另填 key，也不另起 OAuth。模型名册实时读取并后台刷新；图片输入只对实测能读图的模型开放，未实测的模型保持纯文本。文件以只读 handle 交给模型（音频/视频不在 DSH 消息词汇内）。已在 DSH 0.2.2-rc.3 与 0.2.3-alpha.x 验证。",
+    "description": "复用 CANNWork 已为 opencode 建立的登录态，把 CANNBOT 网关的对话模型接入 DSH：不需要另填 key，也不另起 OAuth。模型名册实时读取并后台刷新；图片输入只对实测能读图的模型开放，未实测的模型保持纯文本。文件以只读 handle 交给模型（音频/视频不在 DSH 消息词汇内）。已在 DSH 0.2.2-rc.3 与 0.2.3-alpha.x 验证。 设置 → CANNBOT 提供完整配置页（Models 页底部也可进入）：查看凭据状态、刷新模型目录，并即时调整图片/容量预算。",
     "detail": "docs/DETAIL.zh.md"
   }
 }

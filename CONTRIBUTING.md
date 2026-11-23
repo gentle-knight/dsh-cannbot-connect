@@ -12,7 +12,7 @@
 
 ```bash
 npm install
-npm test                 # 18 组离线测试，不联网、不读真实凭据
+npm test                 # 23 组离线测试，不联网、不读真实凭据
 npm run test:compat      # 0.2.2-rc.3 + 0.2.3-alpha.2 宿主矩阵
 npm run test:coverage    # V8 覆盖率门槛：行 >=98%、函数 >=90%
 npm run check            # 语法 + 离线测试 + 宿主矩阵 + 覆盖率 + 密钥扫描
@@ -21,6 +21,11 @@ node e2e.mjs             # 实网 e2e（需要 CANNWork 登录与额度）
 
 宿主矩阵在缺少宿主时会跳过；可用 `CANNBOT_HOST_STABLE` / `CANNBOT_HOST_ALPHA`
 显式指定宿主目录。
+
+## 浏览器半部
+
+`client.js` 是手写的 DSH loader 模块（`settings.section` + `settings.models.footer`），没有打包步骤；
+修改后至少运行 `node --check client.js`，并在 DSH Web 里打开设置页验证保存、刷新与冲突提示。
 
 ## 文档
 

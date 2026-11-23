@@ -36,25 +36,33 @@ test tooling; the live end-to-end script; credential path resolution on Linux,
 macOS, and Windows; packaging metadata.
 
 Out of scope for this plan: DSH itself, the CANNBOT gateway's model behaviour,
-CANNWork's UI, plugin-market review, load/soak testing, and a browser UI
-(the plugin ships no client-side surface).
+CANNWork's UI, plugin-market review, and load/soak testing. The plugin now ships
+a small browser surface (`client.js`); its manifest, slot registration, and
+secret-free status route are covered offline, while rendered layout remains L5
+manual verification.
 
 ## 3. Test levels
 
 | Level | Purpose | Where |
 |---|---|---|
-| L0 static | Parse every module, validate the manifest/patch/exports, prove the host import surface, and prove every suite is registered | `scripts/check-syntax.mjs`, `test/manifest.mjs`, `test/import-surface.mjs`, `test/suite-manifest.mjs` |
+| L0 static | Parse every module, validate the manifest/patch/exports, prove the host import surface, and prove every suite is registered | `scripts/check-syntax.mjs`, `test/manifest.mjs`, `test/client-bundle.mjs`, `test/import-surface.mjs`, `test/suite-manifest.mjs` |
 | L1 unit | Pure functions and schemas: config, wire translation, errors, credential resolution, platform candidates, model metadata | `test/config.mjs`, `test/errors.mjs`, `test/wire.mjs`, `test/credentials.mjs`, `test/credentials-platform.mjs`, `test/adapter-meta.mjs` |
 | L2 contract/integration | Adapter streams against a local mock gateway; plugin mount/dispose; roster store; security properties | `test/adapter-*.mjs`, `test/plugin.mjs`, `test/catalog*.mjs`, `test/security.mjs` |
+| L2.5 settings surface | Manifest/client wiring, config projection, status route, live config apply | `test/manifest.mjs`, `test/config-runtime.mjs`, `test/status.mjs`, `test/web-status.mjs`, `test/plugin-live.mjs` |
 | L3 host compatibility | The same offline suites against the stable and alpha host lines | `scripts/host-matrix.mjs` |
 | L4 live e2e | Real `LlmRuntime` + real gateway: text, reasoning, tools, replay, images | `e2e.mjs` |
-| L5 manual | Rendered icon, locale strings, detail page in Plugin Manager | user, in a browser |
+| L5 manual | Rendered icon, locale strings, detail page in Plugin Manager; Settings → CANNBOT page, Models footer, save/refresh interactions | user, in a browser |
 
 ## 4. Inventory and traceability
 
 | Requirement | Evidence |
 |---|---|
 | Bundle installs, patch inserts one row, exports/files stay honest | `test/manifest.mjs`; `npm pack --dry-run` |
+| Settings page and Models footer are declared by the manifest and client loader | `test/manifest.mjs` |
+| Live config projection and refresh nonce | `test/config-runtime.mjs` |
+| Status projection is secret-free and modality-accurate | `test/status.mjs` |
+| Read-only status route is exact, authenticated, and no-store | `test/web-status.mjs` |
+| Volatile settings reach the adapter and bad endpoints are contained | `test/plugin-live.mjs` |
 | Plugin mounts without network, registers `cannbot`, returns a disposer | `test/plugin.mjs` |
 | Host symbols imported by the plugin exist (alpha import break) | `test/import-surface.mjs`, L3 |
 | Config defaults and obvious rejections | `test/config.mjs` |
@@ -87,8 +95,8 @@ Measured by `npm run test:coverage` (`scripts/coverage.mjs`).
 - **Exclusions**: `scripts/`, `test/`, `e2e.mjs`, generated `coverage/`. The
   probes are operational tools, not runtime code.
 - **Thresholds (gate)**: lines **≥ 98 %**, functions **≥ 90 %**.
-- **Current result (2026-11-23, stable host)**: lines **100.00 % (1068/1068)**,
-  functions **92.63 % (88/95)**, 18 offline suites.
+- **Current result (2026-11-23, alpha host)**: lines **99.41 % (1340/1348)**,
+  functions **93.55 % (116/124)**, 23 offline suites.
 - **Limits**: a line can be executed (covered) without its semantic branch
   being asserted; thresholds are a floor, not an adequacy proof. The risk-based
   matrix in §7 is the complementary evidence.
@@ -127,6 +135,7 @@ line requires ≥ 24.22.3. The plugin declares the same floor.
 | Host removes an imported symbol (alpha) | `import-surface`, L3 | static + host matrix |
 | Windows BOM / `USERPROFILE` / path separators | `credentials-platform` (BOM, candidates); `PLATFORMS.md` for the rest | simulated; separator/ACL not executed |
 | Developer tooling fails on Windows (`./check-secrets.sh`, `&&` chains) | Node runners: `run-tests`, `check-secrets`, `check-syntax`; `npm run check` | static; shell wrapper is optional |
+| Settings page renders the wrong namespace or exposes a secret | `plugin-live`, `status`, `web-status`; L5 rendered check | partial; layout/manual unverified offline |
 
 ## 8. Test data and isolation
 
@@ -151,7 +160,7 @@ an explicit `CANNBOT_HOST_*`); for L4, CANNWork signed in and quota approved.
 
 **Exit for a change**:
 
-1. `npm test` passes (18 offline suites).
+1. `npm test` passes (23 offline suites).
 2. `npm run test:compat` passes on every available host line.
 3. `npm run test:coverage` meets lines ≥ 98 % and functions ≥ 90 %.
 4. `npm run check:secrets` is clean (tree and history).
@@ -165,7 +174,7 @@ an explicit `CANNBOT_HOST_*`); for L4, CANNWork signed in and quota approved.
 ## 10. Commands and CI
 
 ```bash
-npm test                 # 18 offline suites, no network, no real credentials
+npm test                 # 23 offline suites, no network, no real credentials
 npm run test:compat      # stable + alpha host matrix
 npm run test:coverage    # V8 coverage + thresholds
 npm run check:secrets    # tree + Git history scan

@@ -81,6 +81,20 @@ check('files includes the icon', files.includes('icon.svg'))
 check('files includes the user-facing docs', files.includes('docs/DETAIL.md') && files.includes('docs/CONFIGURATION.md'))
 check('exports exposes ./icon', manifest.exports?.['./icon'] === './icon.svg')
 check('exports exposes the locale JSON', manifest.exports?.['./locale/*.json'] === './locale/*.json')
+check('exports exposes the client bundle', manifest.exports?.['./client'] === './client.js')
+check(
+  'dsh.client declares the web platform',
+  manifest.dsh?.client?.platform === 'web',
+  manifest.dsh?.client?.platform,
+)
+check(
+  'dsh.client injects the settings, slots, and locale clients',
+  Array.isArray(manifest.dsh?.client?.inject)
+    && manifest.dsh.client.inject.includes('@deepseek-ai/dsh-client-ui-settings')
+    && manifest.dsh.client.inject.includes('@deepseek-ai/dsh-client-ui-slots')
+    && manifest.dsh.client.inject.includes('@deepseek-ai/dsh-client-locale'),
+)
+check('files includes the client bundle', files.includes('client.js'))
 
 // Every declared runtime file must exist. `files` is a packaging filter, not a
 // guarantee, and a local directory install links the checkout instead of a
@@ -91,6 +105,18 @@ for (const entry of files) {
   if (!existsSync(absolute)) fail(`declared file does not exist: ${entry}`)
 }
 ok('declared non-glob files exist')
+
+// The client bundle is hand-written loader code, not a packaged app: prove the
+// id, the two slot names, and the absence of a second application root.
+if (existsSync(join(packageDir, 'client.js'))) {
+  const client = readFileSync(join(packageDir, 'client.js'), 'utf8')
+  check('client uses the module loader', client.includes('__ModuleLoader__'))
+  check('client registers under the package name', client.includes("id: 'dsh-cannbot-connect'"))
+  check('client registers a settings section', client.includes("register('settings.section'"))
+  check('client registers the Models footer', client.includes("register('settings.models.footer'"))
+  check('client does not replace the app root', !client.includes('document.body'))
+  check('client does not use an iframe', !client.includes('<iframe'))
+}
 
 // ── supply chain ────────────────────────────────────────────────────────────
 const scripts = manifest.scripts ?? {}

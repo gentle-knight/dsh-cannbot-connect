@@ -16,6 +16,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { offloadedImageText, requestImageHandleText, resolveImageAttachmentAccess } from '@deepseek-ai/dsh-llm'
 import { CannbotAdapter, Config, PROVIDER, fetchCatalog } from '../lib/index.js'
+import { readConfig } from '../lib/config-runtime.js'
 
 const JWT = 'test-jwt-0123456789abcdef'
 const ACCOUNT_VK = 'vk-account-0123456789'
@@ -257,7 +258,7 @@ async function main() {
 
     // ── 2. The default vision list is the measured one ─────────────────────
     {
-      const defaults = new Config({}).visionModels
+      const defaults = readConfig(new Config({})).visionModels
       check('default vision list contains qwen3.8-flash', defaults.includes('qwen3.8-flash'), defaults.join(','))
       check('default vision list contains glm-5.3-flash', defaults.includes('glm-5.3-flash'))
       check(

@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.5.0
+
+- Add a **CANNBOT settings page** under DSH Settings, registered by a new
+  `dsh.client` browser half. It shows CANNWork credential state, the live model
+  catalog, per-model image switches, image budgets, refresh/capacity settings,
+  and the effective endpoint, and writes changes through the platform's
+  revisioned `configForms` API.
+- Add the same panel as a folding **Models page footer** card, so the Models
+  page is a working entry point without pretending to be a native provider row.
+  The built-in Models editor only supports `llm-deepseek` and `llm-pi-ai`;
+  third-party namespaces fall back to an `unknown` layout whose Apply action is
+  disabled. This plugin therefore keeps its own settings surface, like
+  `dsh-connect-workbuddy`.
+- Make every Config field volatile and apply `loader/volatile-update` live:
+  image capability changes refresh the model picker, catalog/interval changes
+  re-arm the roster, and endpoint changes are validated before they replace the
+  previous endpoints. A rejected live endpoint is reported without taking the
+  provider down.
+- Add `GET /cannbot-connect/status`, an authenticated read-only resource for the
+  credential/catalog facts the settings document cannot carry. It strips JWTs,
+  VKs, full credential paths, and raw upstream diagnostics.
+- Add `config-runtime`, status, route, live-update, and client-manifest tests;
+  raise the suite count to 23.
+
 ## 0.4.3
 
 - Fix image input on DSH 0.2.3: the attachment service renamed the request-image

@@ -8,6 +8,7 @@
  * touching the network.
  */
 import { Config } from '../lib/config.js'
+import { readConfig } from '../lib/config-runtime.js'
 import {
   DEFAULT_CATALOG_REFRESH_MS,
   DEFAULT_CONTEXT_WINDOW,
@@ -46,18 +47,21 @@ const check = (label, predicate, detail) => {
 check('Config is callable (schemastery object)', typeof Config === 'function')
 const defaults = Config({})
 check('Config accepts an empty object', typeof defaults === 'object' && defaults !== null)
-eq('streamIdleTimeoutMs default', defaults.streamIdleTimeoutMs, DEFAULT_STREAM_IDLE_TIMEOUT_MS)
-eq('defaultContextWindow default', defaults.defaultContextWindow, DEFAULT_CONTEXT_WINDOW)
-eq('defaultMaxTokens default', defaults.defaultMaxTokens, DEFAULT_MAX_TOKENS)
-eq('visionModels default', defaults.visionModels, [...DEFAULT_VISION_MODELS])
-eq('requestImagePixelBudget default', defaults.requestImagePixelBudget, DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET)
-eq('requestImageMaxBytes default', defaults.requestImageMaxBytes, DEFAULT_REQUEST_IMAGE_MAX_BYTES)
-eq('maxRequestImageBytes default', defaults.maxRequestImageBytes, DEFAULT_MAX_REQUEST_IMAGE_BYTES)
-eq('maxRequestImages default', defaults.maxRequestImages, DEFAULT_MAX_REQUEST_IMAGES)
-eq('imageOffloadCountQuantum default', defaults.imageOffloadCountQuantum, DEFAULT_IMAGE_OFFLOAD_COUNT_QUANTUM)
-eq('catalogRefreshMs default', defaults.catalogRefreshMs, DEFAULT_CATALOG_REFRESH_MS)
-check('baseURL default is the CANNBOT gateway', /^https:\/\/cannbot\.hicann\.cn\//.test(defaults.baseURL))
-check('modelsURL default is the roster endpoint', /^https:\/\/cannbot\.hicann\.cn\//.test(defaults.modelsURL))
+check('every config field is a live reference', typeof defaults.streamIdleTimeoutMs?.get === 'function')
+const plain = readConfig(defaults)
+eq('streamIdleTimeoutMs default', plain.streamIdleTimeoutMs, DEFAULT_STREAM_IDLE_TIMEOUT_MS)
+eq('defaultContextWindow default', plain.defaultContextWindow, DEFAULT_CONTEXT_WINDOW)
+eq('defaultMaxTokens default', plain.defaultMaxTokens, DEFAULT_MAX_TOKENS)
+eq('visionModels default', plain.visionModels, [...DEFAULT_VISION_MODELS])
+eq('requestImagePixelBudget default', plain.requestImagePixelBudget, DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET)
+eq('requestImageMaxBytes default', plain.requestImageMaxBytes, DEFAULT_REQUEST_IMAGE_MAX_BYTES)
+eq('maxRequestImageBytes default', plain.maxRequestImageBytes, DEFAULT_MAX_REQUEST_IMAGE_BYTES)
+eq('maxRequestImages default', plain.maxRequestImages, DEFAULT_MAX_REQUEST_IMAGES)
+eq('imageOffloadCountQuantum default', plain.imageOffloadCountQuantum, DEFAULT_IMAGE_OFFLOAD_COUNT_QUANTUM)
+eq('catalogRefreshMs default', plain.catalogRefreshMs, DEFAULT_CATALOG_REFRESH_MS)
+eq('refreshNonce default', plain.refreshNonce, '')
+check('baseURL default is the CANNBOT gateway', /^https:\/\/cannbot\.hicann\.cn\//.test(plain.baseURL))
+check('modelsURL default is the roster endpoint', /^https:\/\/cannbot\.hicann\.cn\//.test(plain.modelsURL))
 
 // ── explicit values ──────────────────────────────────────────────────────────
 
@@ -72,9 +76,10 @@ const custom = Config({
   requestImageMaxBytes: 500_000,
   maxRequestImageBytes: 2_000_000,
 })
-eq('explicit baseURL', custom.baseURL, 'https://example.test/v1')
-eq('explicit visionModels', custom.visionModels, ['model-a', 'model-b'])
-eq('explicit streamIdleTimeoutMs', custom.streamIdleTimeoutMs, 12_345)
+const customPlain = readConfig(custom)
+eq('explicit baseURL', customPlain.baseURL, 'https://example.test/v1')
+eq('explicit visionModels', customPlain.visionModels, ['model-a', 'model-b'])
+eq('explicit streamIdleTimeoutMs', customPlain.streamIdleTimeoutMs, 12_345)
 
 // ── rejections the host would surface as a config failure ────────────────────
 
@@ -92,7 +97,7 @@ rejects('a non-string baseURL', { baseURL: 42 })
 rejects('a zero image count bound', { maxRequestImages: 0 })
 rejects('a negative timeout', { streamIdleTimeoutMs: -1 })
 rejects('a negative refresh interval', { catalogRefreshMs: -1 })
-ok('catalogRefreshMs 0 disables the timer', Config({ catalogRefreshMs: 0 }).catalogRefreshMs === 0)
+ok('catalogRefreshMs 0 disables the timer', readConfig(Config({ catalogRefreshMs: 0 })).catalogRefreshMs === 0)
 
 // Unknown keys are the host's concern (the Loader validates rows); the schema
 // itself must not silently drop a known field, which the checks above cover.

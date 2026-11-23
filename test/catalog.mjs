@@ -173,6 +173,72 @@ function controlledLoader() {
   eq('a disposed store drops the late answer', observed.length, 0)
 }
 
+// ── live option updates and public status ───────────────────────────────────
+{
+  const control = controlledLoader()
+  const observed = []
+  const store = new CatalogStore({
+    modelsURL: 'https://example.test/models',
+    refreshMs: 0,
+    loader: control.loader,
+    onCatalog: () => observed.push('catalog'),
+    onFailure: () => observed.push('failure'),
+  })
+  await store.refresh('manual')
+  check('a successful refresh records a timestamp', Number.isFinite(store.status.lastRefreshAt))
+  eq('a successful refresh clears the failure', store.status.lastFailure, undefined)
+  eq('the refresh reason is recorded', store.status.lastReason, 'manual')
+  eq('the refresh is not left marked in flight', store.status.isRefreshing, false)
+
+  store.updateOptions({ modelsURL: 'https://example.test/models2', refreshMs: 0 })
+  await tick(20)
+  eq('an endpoint change refreshes immediately', control.calls.length, 2)
+  eq('the new endpoint is used', control.calls[1]?.modelsURL, 'https://example.test/models2')
+
+  control.setAnswer({ ok: false, reason: 'auth', catalog: [] })
+  await store.refresh('manual')
+  eq('a failure is published in the status', store.status.lastFailure, 'auth')
+  eq('a failure does not erase the roster callback history', observed.join(','), 'catalog,catalog,failure')
+  store.dispose()
+}
+
+// ── an interval-only update re-arms the timer ───────────────────────────────
+{
+  const control = controlledLoader()
+  const store = new CatalogStore({
+    modelsURL: 'https://example.test/models',
+    refreshMs: 10_000,
+    loader: control.loader,
+    onCatalog: () => {},
+    onFailure: () => {},
+  })
+  store.start()
+  await tick(10)
+  store.updateOptions({ modelsURL: 'https://example.test/models', refreshMs: 0 })
+  eq('an interval update does not fetch immediately', control.calls.length, 1)
+  store.dispose()
+}
+
+// ── an endpoint change during an in-flight fetch queues one follow-up ───────
+{
+  const control = controlledLoader()
+  const release = control.hold()
+  const store = new CatalogStore({
+    modelsURL: 'https://example.test/models',
+    refreshMs: 0,
+    loader: control.loader,
+    onCatalog: () => {},
+    onFailure: () => {},
+  })
+  const pending = store.refresh('manual')
+  store.updateOptions({ modelsURL: 'https://example.test/models2', refreshMs: 0 })
+  release()
+  await pending
+  await tick(20)
+  eq('the queued follow-up uses the new endpoint', control.calls.at(-1)?.modelsURL, 'https://example.test/models2')
+  store.dispose()
+}
+
 // ── fetchCatalog without a JWT is an auth result, not a throw ───────────────
 {
   const { mkdtempSync, mkdirSync, rmSync } = await import('node:fs')

@@ -30,6 +30,11 @@
   在 0.2.2 与 0.2.3-alpha 两条宿主线上都成立。
 - **零运行时依赖**：不引入第三方供应链；安装期无 `postinstall`/`preinstall` 脚本。
 - **不写盘**：插件只读凭据文件，从不写回。
+- **只读状态面**：`GET /cannbot-connect/status` 注册在 DSH 已有的 Web 服务上，要求认证，
+  只返回凭据的 present/expired/来源标签、模型目录和配置摘要；不返回 JWT/VK、完整文件路径
+  或原始上游错误；端点只返回去掉 userinfo/query/hash 的展示形式，避免代理凭据或一次性 token
+  进入浏览器。这里没有写路由，配置写入走平台 revisioned settings API，避免 CSRF 面。
+- **浏览器不接触凭据**：设置页只读状态摘要；模型请求仍由 Host 从本机文件读取凭据。
 
 ## 残留风险
 

@@ -83,7 +83,7 @@ function stageHost(host) {
   for (const entry of ['lib', 'test', 'scripts', 'docs', 'locale']) {
     if (existsSync(join(packageDir, entry))) cpSync(join(packageDir, entry), join(dir, entry), { recursive: true })
   }
-  for (const entry of ['package.json', 'cordis.patch.yml', 'README.md', 'e2e.mjs', 'LICENSE', 'icon.svg', 'CHANGELOG.md']) {
+  for (const entry of ['package.json', 'cordis.patch.yml', 'client.js', 'README.md', 'e2e.mjs', 'LICENSE', 'icon.svg', 'CHANGELOG.md']) {
     if (existsSync(join(packageDir, entry))) cpSync(join(packageDir, entry), join(dir, entry))
   }
   mkdirSync(join(dir, 'node_modules', '@deepseek-ai'), { recursive: true })

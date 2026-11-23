@@ -1,7 +1,7 @@
 {
   "name": "dsh-cannbot-connect",
-  "version": "0.4.3",
-  "description": "Bring CANNBOT gateway models into DeepSeek Harness by reusing CANNWork's opencode sign-in, with a live model roster and measured per-model image support.",
+  "version": "0.5.0",
+  "description": "Bring CANNBOT gateway models into DeepSeek Harness by reusing CANNWork's opencode sign-in, with a live model roster, a Settings → CANNBOT page, and measured per-model image support.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -9,10 +9,12 @@
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json",
     "./locale/*.json": "./locale/*.json",
-    "./icon": "./icon.svg"
+    "./icon": "./icon.svg",
+    "./client": "./client.js"
   },
   "files": [
     "lib",
+    "client.js",
     "cordis.patch.yml",
     "README.md",
     "LICENSE",
@@ -30,6 +32,15 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-locale"
+      ]
     }
   },
   "engines": {

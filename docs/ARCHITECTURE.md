@@ -64,6 +64,35 @@ OpenAI 兼容协议，不包一层 provider SDK，因此**没有任何第三方�
 - **附件服务是懒依赖**：`ctx.get('attachments')` 在请求路径上解析，插件在没有附件服务的
   部署里照样挂载；真收到图片时才给明确拒绝
 
+### 设置页与状态接口
+
+设置页是插件的**浏览器半部**（`client.js`，`dsh.client`），不是 Host 路由：
+
+- `settings.section` id `cannbot-connect`：DSH 设置导航里的完整页面；
+- `settings.models.footer` id `cannbot-connect`：Models 页底部的折叠卡片；
+- 两者共用同一 React 面板，读写 `ctx.configForms.get('llm-cannbot')`；
+- 配置字段全部是 volatile，写入通过 `settings.mutate`，携带 revision，冲突会返回 false；
+- Host 监听 `loader/volatile-update`，重新解析配置并更新 adapter/catalog，不需要重启；
+- `refreshNonce` 是内部动作字段：设置页写入随机字符串，Host 只在值变化时刷新目录。
+
+状态接口是唯一的 HTTP 面：
+
+```
+GET /cannbot-connect/status
+```
+
+它由 `lib/web.js` 注册到 DSH 已有的 `webServer`，`auth: 'required'`，只读，返回
+凭据存在性/过期时间、模型目录、最近刷新/失败分类和有效配置。JWT、VK、完整凭据路径和
+原始上游错误不会进入响应（`lib/status.js` 负责脱敏）。
+
+**为什么不是内置 Models provider 行？**
+
+`dsh-client-ui-settings-models` 的 `ProviderEditor` 只对 `llm-deepseek` 和
+`llm-pi-ai` 做完整字段编辑；其他命名空间走 `unknown` 布局，Apply 被禁用。workbuddy 的
+真实模型配置页也是它自己的 `settings.section`，而不是内置行。本插件保留自定义
+`LlmAdapter`，因此不注册 configurable-provider 目录项，避免生成一个可见但不可编辑的
+死行；Settings 页 + Models footer 是当前宿主能力下的完整替代。
+
 ### 数据类型：哪些能发、哪些由宿主处理
 
 DSH 的消息词汇只有 `text` 与 `image` 两种模态；适配器能决定的只有图片。逐类口径如下
@@ -100,7 +129,7 @@ DSH 的消息词汇只有 `text` 与 `image` 两种模态；适配器能决定�
 
 ### 平台依赖与兼容性
 
-插件是纯 ESM JavaScript：**没有原生模块、没有安装脚本、运行时不起子进程/本地服务**。
+插件是纯 ESM JavaScript：**没有原生模块、没有安装脚本、运行时不起子进程/独立服务**；设置页的状态路由注册到 DSH 已有的 `webServer`。
 平台差异只落在两处：
 
 1. **凭据文件位置**：当前 CANNWork/opencode 在三个平台都用
